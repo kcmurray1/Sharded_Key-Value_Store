@@ -22,6 +22,12 @@ replicas = {"alice" : "10.10.0.2", "bob" : "10.10.0.3", "carol": "10.10.0.4",
     members = {'erin'}
     QUESTION from Me(kristian): Can members of a shard process requests? Or are we treating shards as like primary back-up where
     say, alice is the primary and 'erin' is the backup?
+
+    ANSWER from Me(will): Yes, all shard members can process requests. Just like in the previous assignment, nodes are non-unique and
+    do not have roles like "primary" or "backup". What we ARE interested in, however, is whether the incoming /kvs requests are
+    for a key that belongs to the shard that the receiving node is a part of. If the key is in another shard than the one that
+    the receiving node is a part of, then it gets forwarded (See "Forwarding requests to shards - Example" in the assignment 4 pdf).
+    
 (2) Communication protocol where replica communicates 
     idk man
 NOTE: each shard id needs at least 2 replicas
