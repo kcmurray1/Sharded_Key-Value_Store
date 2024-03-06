@@ -6,10 +6,13 @@ from threading import Thread, Lock
 from vectorclock import VectorClock
 from queue import Queue
 import time
+from hashlib import md5
 
 views_route = Blueprint("views", __name__)
 _store = dict()
 MIN_KEY_LENGTH = 50
+
+shard_count = 0 # WIP - receive this info from argv in replica.py
 
 # Pulse vars 
 PULSE_INTERVAL = 0.5 # duration of time between pulse request sends
@@ -334,3 +337,39 @@ def periodic_pulse_sender():
                 update_views(crashed_replicas, removed=True)
         # Wait a set interval of time between pulses
         time.sleep(PULSE_INTERVAL)
+
+# --------------------------------------------------------------------------------------------------------------
+# Shard endpoints
+# --------------------------------------------------------------------------------------------------------------
+
+# Retrieve the list of all shard ids
+@views_route.route("/shard/ids", methods=["GET"])
+def get_shard_ids():
+    pass
+
+# Retrieve the shard id of the responding node/replica
+@views_route.route("/shard/node-shard-id", methods=["GET"])
+def get_shard_id():
+    pass
+
+# Look up the members of the specified shard
+@views_route.route("/shard/members/<ID>", methods=["GET"])
+def get_members():
+    pass
+
+# Look up the number of kv pairs stored in the specified shard
+@views_route.route("/shard/key-count/<ID>", methods=["GET"])
+def get_key_count():
+    pass
+
+# Assign the node <ID:PORT> to the shard <ID>
+# Given JSON body {"socket-address": <IP:PORT>}
+@views_route.route("/shard/add-member/<ID>", methods=["PUT"])
+def add_member():
+    pass
+
+# Trigger a reshard into <INTEGER> shards, maintaining fault-tolerance
+# Given JSON body {"shard-count": <INTEGER>}
+@views_route.route("/shard/reshard", methods=["PUT"])
+def reshard():
+    pass
