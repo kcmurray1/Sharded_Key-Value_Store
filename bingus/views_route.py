@@ -22,7 +22,9 @@ views = set()
 socket_address = None # this replica's address
 local_vc = dict()
 request_lock = Lock()
-
+shard_id = None
+shard_members = set()
+ring_positions = dict()
 # --------------------------------------------------------------------------------------------------------------
 # Functions
 # --------------------------------------------------------------------------------------------------------------

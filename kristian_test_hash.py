@@ -5,6 +5,7 @@ import hashlib
 
 NUM_SHARDS = 3
 HASH_OUTPUT_SPACE = 128
+MIN_NODES_PER_SHARD = 2
 replicas = {"alice" : "10.10.0.2", "bob" : "10.10.0.3", "carol": "10.10.0.4",
             "dave":"10.10.0.5", "erin" : "10.10.0.6", "frank" : "10.10.0.7"}
 
@@ -32,20 +33,68 @@ replicas = {"alice" : "10.10.0.2", "bob" : "10.10.0.3", "carol": "10.10.0.4",
     idk man
 NOTE: each shard id needs at least 2 replicas
 """
+
+def balance_partitions(shards):
+    """
+    Returns:
+        dictionary containing shards with at least 2 nodes assigned
+        Else returns None
+    """
+    fault_tolerant = dict()
+    
+    # Find shard that contain < 2 nodes
+    for cur_shard in shards.keys():
+        nodes = shards[cur_shard]
+       
+        for j in shards:
+            nodes_j = shards[j]
+            # Keep adding nodes until shard reaches threshold
+            # try to find shard that contains > 2 nodes 
+            if len(nodes_j) > MIN_NODES_PER_SHARD and len(nodes) < MIN_NODES_PER_SHARD:
+                # Sort alphabetically and redistribute to shard with < 2 nodes
+                nodes_j = list(sorted(nodes_j))
+                # Move node from large partition into smaller partition
+                node = nodes_j.pop()
+                # Update the distribution of shards
+                shards[j] = set(nodes_j)
+                nodes.add(node)
+        # Was unable to reach fault tolerance after redistribution
+        if len(nodes) < MIN_NODES_PER_SHARD:
+            return None
+        # Add parition with at least min nodes needed
+        fault_tolerant[cur_shard] = nodes
+    return fault_tolerant
+
 def assign_shard_ids(n_shards):
     distribution = dict()
+    for id in range(NUM_SHARDS):
+        distribution[id] = set()
+    ring_pos = dict()
     for i in range(n_shards):
         distribution[i] = set()
     for replica in replicas:
         raw_hash = hashlib.md5(bytes(replicas[replica].encode('ascii')))
         hash_as_decimal = int(raw_hash.hexdigest(),16)
         shard_id = hash_as_decimal % n_shards
-        #print(f"Replica: {replica} with id: {shard_id} and hash {hash_as_decimal}")
         distribution[shard_id].add(replica)
-    return distribution
+        ring_pos[replica] = hash_as_decimal % HASH_OUTPUT_SPACE
+    return (distribution, ring_pos)
 
 
 
 if __name__=="__main__":
-    res = assign_shard_ids(NUM_SHARDS)
-    print(f"Shard distribution over {NUM_SHARDS} shards: {res}")
+    shards, ring = assign_shard_ids(NUM_SHARDS)
+    print(f"Shard distribution over {NUM_SHARDS} shards: {shards}")
+    print("attempting fault tolerance", balance_partitions(shards))
+    print(f"Replica location on imaginary ring(OUTPUT_SPACE: {HASH_OUTPUT_SPACE}): {ring}")
+
+    views = set()
+    for id in shards:
+        if id != 0:
+            views.update(shards[id])
+    print(views)
+    # # quick test
+    # shards = {0: set(), 1 : {'carol', 'alice', 'bob', 'dave', 'alfred'}, 2: {"john"}}
+
+    # print(balance_partitions(shards))
+    
