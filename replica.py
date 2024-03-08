@@ -10,7 +10,7 @@ TIME_TO_BOOT = 2
 HASH_OUTPUT_SPACE = 128
 MIN_NODES_PER_SHARD = 2
 
-def balance_partitions(shards):
+def balance_shards(shards):
     """
     Returns:
         dictionary containing shards with at least 2 nodes assigned
@@ -19,8 +19,8 @@ def balance_partitions(shards):
     fault_tolerant = dict()
     
     # Find shard that contain < 2 nodes
-    for cur_shard in shards.keys():
-        nodes = shards[cur_shard]
+    for cur_shard_id in shards.keys():
+        nodes = shards[cur_shard_id]
        
         for j in shards:
             nodes_j = shards[j]
@@ -31,20 +31,20 @@ def balance_partitions(shards):
                 nodes_j = list(sorted(nodes_j))
                 # Move node from large partition into smaller partition
                 node = nodes_j.pop()
-                # Update the distribution of shards
+                # Update the initial_distribution of shards
                 shards[j] = set(nodes_j)
                 nodes.add(node)
         # Was unable to reach fault tolerance after redistribution
         if len(nodes) < MIN_NODES_PER_SHARD:
             return None
         # Add parition with at least min nodes needed
-        fault_tolerant[cur_shard] = nodes
+        fault_tolerant[cur_shard_id] = nodes
     return fault_tolerant
 
 def partition_by_hash(replicas, shard_count):
-    distribution = dict()
+    initial_distribution = dict()
     for id in range(shard_count):
-        distribution[id] = set()
+        initial_distribution[id] = set()
     ring_pos = dict()
     for replica in replicas:
         # Hash each replica by address
@@ -52,12 +52,12 @@ def partition_by_hash(replicas, shard_count):
         hash_as_decimal = int(raw_hash.hexdigest(),16)
         # Calculate shard_id for replica
         shard_id = hash_as_decimal % shard_count
-        distribution[shard_id].add(replica)
+        initial_distribution[shard_id].add(replica)
         # calculate position on imaginary ring
         ring_pos[replica] = hash_as_decimal % HASH_OUTPUT_SPACE
     # each partition must have at least 2 nodes
-    distribution = balance_partitions(distribution)
-    return (distribution, ring_pos)
+    initial_distribution = balance_shards(initial_distribution)
+    return (initial_distribution, ring_pos)
 
 def find_replica_id(shards, replica_to_find):
     for id in shards:
