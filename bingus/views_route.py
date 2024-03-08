@@ -12,7 +12,7 @@ views_route = Blueprint("views", __name__)
 _store = dict()
 MIN_KEY_LENGTH = 50
 
-shard_count = 0 # WIP - receive this info from argv in replica.py
+shard_count = 0 # current # of shards in the system
 
 # Pulse vars 
 PULSE_INTERVAL = 0.5 # duration of time between pulse request sends
@@ -22,8 +22,9 @@ views = set()
 socket_address = None # this replica's address
 local_vc = dict()
 request_lock = Lock()
-shard_id = None
-shard_members = set()
+shard_id = None # id of the shard this node belongs to
+shard_ids = set() # list of ids of all shards in the system
+shard_members = set() # list of nodes in this node's shard
 ring_positions = dict()
 # --------------------------------------------------------------------------------------------------------------
 # Functions
@@ -347,31 +348,62 @@ def periodic_pulse_sender():
 # Retrieve the list of all shard ids
 @views_route.route("/shard/ids", methods=["GET"])
 def get_shard_ids():
-    pass
+    global shard_ids
+    # leftover comment, below is how I imagine shard_ids will be set - Will
+    # shard_ids = [id for id in range(shard_count)]
+    return make_response({"shard-ids": shard_ids}, 200)
 
 # Retrieve the shard id of the responding node/replica
 @views_route.route("/shard/node-shard-id", methods=["GET"])
 def get_shard_id():
-    pass
+    global shard_id
+    return make_response({"node-shard-id": shard_id}, 200)
 
 # Look up the members of the specified shard
 @views_route.route("/shard/members/<ID>", methods=["GET"])
-def get_members():
-    pass
+def get_members(ID):
+    global shard_id
+    global shard_ids
+    global shard_members
+    if ID not in shard_ids:
+        return make_response({"error": "Shard ID does not exist"}, 404) 
+    elif ID != shard_id:
+        print("WIP - forward request to nodes belonging to shard ID?")
+    else:
+        return make_response({"shard-members": shard_members}, 200)
 
 # Look up the number of kv pairs stored in the specified shard
 @views_route.route("/shard/key-count/<ID>", methods=["GET"])
-def get_key_count():
-    pass
+def get_key_count(ID):
+    global _store
+    global shard_id
+    global shard_ids
+    if ID not in shard_ids:
+        return make_response({"error": "Shard ID does not exist"}, 404) 
+    elif ID != shard_id:
+        print("WIP - forward request to nodes belonging to shard ID")
+    else:
+        return make_response({"shard-key-count": len(_store)}, 200)
 
 # Assign the node <ID:PORT> to the shard <ID>
 # Given JSON body {"socket-address": <IP:PORT>}
 @views_route.route("/shard/add-member/<ID>", methods=["PUT"])
-def add_member():
-    pass
+def add_member(ID):
+    try:
+        response = requests.put(f"http://assign/{ID}", json=dict())
+    except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
+        pass
+
+@views_route.route("/assign/<ID>", methods=["PUT"])
+def assign_to_shard(ID):
+    global shard_id
+    shard_id = ID
+    # WIP, update members etc.
+
 
 # Trigger a reshard into <INTEGER> shards, maintaining fault-tolerance
 # Given JSON body {"shard-count": <INTEGER>}
 @views_route.route("/shard/reshard", methods=["PUT"])
 def reshard():
     pass
+

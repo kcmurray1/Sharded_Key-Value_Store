@@ -125,6 +125,7 @@ def startup():
     # Check for shard_count
     if sys.argv[3]:
         shard_count = int(sys.argv[3])
+        views_route.shard_count = shard_count
         partitions, ring_pos = partition_by_hash(starting_views, shard_count)
         print("GENERATED partitions: ", partitions)
         views_route.ring_positions = ring_pos
