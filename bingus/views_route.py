@@ -23,8 +23,7 @@ socket_address = None # this replica's address
 local_vc = dict()
 request_lock = Lock()
 shard_id = None # id of the shard this node belongs to
-shard_ids = set() # list of ids of all shards in the system
-shard_members = set() # list of nodes in this node's shard
+shards = dict() # {shard_id: shard_members}
 ring_positions = dict()
 # --------------------------------------------------------------------------------------------------------------
 # Functions
@@ -348,7 +347,8 @@ def periodic_pulse_sender():
 # Retrieve the list of all shard ids
 @views_route.route("/shard/ids", methods=["GET"])
 def get_shard_ids():
-    global shard_ids
+    global shards
+    shard_ids = shards.keys
     # leftover comment, below is how I imagine shard_ids will be set - Will
     # shard_ids = [id for id in range(shard_count)]
     return make_response({"shard-ids": shard_ids}, 200)
@@ -363,25 +363,29 @@ def get_shard_id():
 @views_route.route("/shard/members/<ID>", methods=["GET"])
 def get_members(ID):
     global shard_id
-    global shard_ids
-    global shard_members
+    global shards
+    shard_ids = shards.keys
     if ID not in shard_ids:
         return make_response({"error": "Shard ID does not exist"}, 404) 
-    elif ID != shard_id:
-        print("WIP - forward request to nodes belonging to shard ID?")
     else:
-        return make_response({"shard-members": shard_members}, 200)
+        return make_response({"shard-members": shards[ID]}, 200)
 
 # Look up the number of kv pairs stored in the specified shard
 @views_route.route("/shard/key-count/<ID>", methods=["GET"])
 def get_key_count(ID):
     global _store
     global shard_id
-    global shard_ids
+    global shards
+    shard_ids = shards.keys
     if ID not in shard_ids:
         return make_response({"error": "Shard ID does not exist"}, 404) 
     elif ID != shard_id:
-        print("WIP - forward request to nodes belonging to shard ID")
+        # WIP - Forward to replicas in the requested shard
+        try:
+            response = requests.get(f"http://shard/key-count/{ID}", json=dict())
+        except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
+            #WIP - should this be a buffer send to ensure the forward doesnt get lost?
+            pass
     else:
         return make_response({"shard-key-count": len(_store)}, 200)
 

@@ -103,7 +103,6 @@ def notify_replicas(view_points, socket_address):
           f"views {views_route.views}\n"
           f"local_clocl {views_route.local_vc}\n"
           f"shard_id {views_route.shard_id}\n"
-          f"shard_members {views_route.shard_members}\n"
           f"ring_positions {views_route.ring_positions}", flush=True)
     # Start Pulse Sender Thread
     h = threading.Timer(TIME_TO_BOOT * 2, pulse_starter)
@@ -131,16 +130,11 @@ def startup():
         views_route.ring_positions = ring_pos
         # set local shard id
         views_route.shard_id = find_replica_id(partitions, views_route.socket_address)
-        # set members
-        views_route.shard_members = partitions[views_route.shard_id]
-        # set local views
-        new_views = set()
-        for id in partitions:
-            if id != views_route.shard_id:
-                new_views.update(partitions[id])
-        starting_views = new_views
+
+        # set shards
+        views_route.shards = partitions
     
-    #starting_views.remove(views_route.socket_address)
+    starting_views.remove(views_route.socket_address)
     
 
     # Notify other replicas about this new instance
