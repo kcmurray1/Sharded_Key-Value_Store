@@ -71,6 +71,7 @@ def buffer_send_view(req : Flask.request_class, view : str):
         except (requests.ConnectionError, requests.RequestException):
             continue
 
+
 def max_of(first : dict, second: dict):
     """Return dictionary containing max of two dictionaries"""
     keys = first.keys()
@@ -349,36 +350,30 @@ def periodic_pulse_sender():
 # Retrieve the list of all shard ids
 @views_route.route("/shard/ids", methods=["GET"])
 def get_shard_ids():
-    global shards
-    shard_ids = shards.keys
-    # leftover comment, below is how I imagine shard_ids will be set - Will
-    # shard_ids = [id for id in range(shard_count)]
+    shard_ids = list(shards.keys())
     return make_response({"shard-ids": shard_ids}, 200)
 
 # Retrieve the shard id of the responding node/replica
 @views_route.route("/shard/node-shard-id", methods=["GET"])
 def get_shard_id():
-    global shard_id
     return make_response({"node-shard-id": shard_id}, 200)
 
 # Look up the members of the specified shard
 @views_route.route("/shard/members/<ID>", methods=["GET"])
 def get_members(ID):
-    global shard_id
     global shards
-    shard_ids = shards.keys
-    if ID not in shard_ids:
+    ID = int(ID)
+    shard_ids = list(shards.keys())
+    if ID not in shards:
         return make_response({"error": "Shard ID does not exist"}, 404) 
     else:
-        return make_response({"shard-members": shards[ID]}, 200)
+        return make_response({"shard-members": list(shards[ID])}, 200)
 
 # Look up the number of kv pairs stored in the specified shard
 @views_route.route("/shard/key-count/<ID>", methods=["GET"])
 def get_key_count(ID):
-    global _store
-    global shard_id
-    global shards
-    shard_ids = shards.keys
+    ID = int(ID)
+    shard_ids = list(shards.keys())
     if ID not in shard_ids:
         return make_response({"error": "Shard ID does not exist"}, 404) 
     elif ID != shard_id:

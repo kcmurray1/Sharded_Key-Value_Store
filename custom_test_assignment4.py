@@ -151,20 +151,57 @@ class TestHW4(unittest.TestCase):
     #     for instance in all_instances:
     #         killInstance(instance)
     #     removeSubnet()
+    
+    def test_a_get_shard_ids(self):
+        '''Do all the instances return the same shard IDs?'''
 
-    def test_a_initial_matching_views(self):
+        print('>>> Get shard-ids from Alice')
+        response = requests.get('http://{}:{}/shard/ids'.format(hostname, alice.published_port))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('shard-ids', response.json())
+        shard_ids = response.json()['shard-ids']
+
+        print('=== Check that everybody reports those shard IDs')
         for instance in all_instances:
             with self.subTest(msg='at instance {}'.format(instance)):
-                response = requests.get('http://{}:{}/view'.format(hostname, instance.published_port))
+                response = requests.get('http://{}:{}/shard/ids'.format(hostname, instance.published_port))
                 self.assertEqual(response.status_code, 200)
-                self.assertIn('view', response.json())
-                print(f"view at {instance.name}: {response.json()['view']}")
-    
+                self.assertIn('shard-ids', response.json())
+                self.assertEqual(set(response.json()['shard-ids']), set(shard_ids))
+
+        # store the shard ids for the rest of the test suite
+        self.shard_ids.extend(shard_ids)
+
+    def test_b_shard_id_members(self):
+        '''Do all the instances agree about the members of each shard?'''
+        for shard_id in self.shard_ids:
+            with self.subTest(msg='for shard {}'.format(shard_id)):
+                print('>>> Get shard {} members from Alice'.format(shard_id))
+                response = requests.get('http://{}:{}/shard/members/{}'.format(hostname, alice.published_port, shard_id))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-members', response.json())
+                shard_members = response.json()['shard-members']
+                self.assertGreater(len(shard_members), 1)
+
+            print('=== Check that everybody reports those shard {} members'.format(shard_id))
+            for instance in all_instances: 
+                with self.subTest(msg='for shard {}; at instance {}'.format(shard_id, instance)):
+                    response = requests.get('http://{}:{}/shard/members/{}'.format(hostname, instance.published_port, shard_id))
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn('shard-members', response.json())
+                    instance_reported = response.json()['shard-members']
+                    self.assertEqual(set(instance_reported), set(shard_members))
+
+            # store the shard member socket addresses for the rest of the test suite
+            self.shard_members[shard_id] = shard_members
+
+        self.assertEqual(len(all_instances), sum(len(members) for shard_id, members in self.shard_members.items()))
+
 
 
 if __name__ == '__main__':
     try:
         buildDockerImage()
-        unittest.main(verbosity=0)
+        unittest.main(verbosity=2)
     except KeyboardInterrupt:
         TestHW4.tearDownClass()
