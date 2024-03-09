@@ -314,6 +314,7 @@ def pulse():
 def update_views(new_views, removed=False):
     global views
     global local_vc
+    global shards
     if not new_views:
         return
     
@@ -324,7 +325,8 @@ def update_views(new_views, removed=False):
         # add new_views to views
         views = views.union(new_views)
         for view in new_views:
-            local_vc[view] = 0
+            if view in shards[shard_id]:
+                local_vc[view] = 0
 
 # Pulse Sender Thread
 # Sends out a pulse at a regular interval, and updates the replica view if any replicas do not respond

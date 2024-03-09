@@ -6,7 +6,7 @@ from bingus import create_app, views_route
 from vectorclock import VectorClock
 import threading
 import hashlib
-TIME_TO_BOOT = 2
+TIME_TO_BOOT = 2.5
 HASH_OUTPUT_SPACE = 128
 MIN_NODES_PER_SHARD = 2
 
@@ -78,8 +78,8 @@ def notify_replicas(view_points, socket_address):
                 metadata = response.json()
                 views_route.views.add(view_address)
 
-                # Check for replicated data in response
-                if 'replica_data' in metadata:
+                # update local clock
+                if 'replica_data' in metadata and (find_replica_id(views_route.shards, view_address) == views_route.shard_id):
                     # compare with padding
                     received_vc = metadata['replica_data']['vc']
                     # pad local clock {a: 0, b:0}
@@ -119,7 +119,7 @@ def startup():
     views_route.socket_address = sys.argv[1]
     views_route.views.add(views_route.socket_address)
     views_route.local_vc[views_route.socket_address] = 0
-    print(f"starting replica: {views_route.socket_address}")
+    
     starting_views = sys.argv[2].split(',')
     # Check for shard_count
     if sys.argv[3]:
@@ -136,7 +136,7 @@ def startup():
     
     starting_views.remove(views_route.socket_address)
     
-
+    print(f"starting replica: {views_route.socket_address}")
     # Notify other replicas about this new instance
     t = threading.Timer(TIME_TO_BOOT, notify_replicas, args=(starting_views, views_route.socket_address))
     t.start()
