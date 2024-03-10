@@ -120,7 +120,7 @@ class TestHW4(unittest.TestCase):
 
     # constants
     shard_count = 2
-    key_count = 2
+    key_count = 600 # 2
 
     @classmethod
     def setUpClass(cls):
@@ -276,44 +276,44 @@ class TestHW4(unittest.TestCase):
             self.causal_metadata['metadata'] = response.json()['causal-metadata']
 
 
-    # def test_f_shard_key_count(self):
+    def test_f_shard_key_count(self):
 
-    #     shard_key_counts = dict()
-    #     for shard_id, members in self.shard_members.items():
+        shard_key_counts = dict()
+        for shard_id, members in self.shard_members.items():
 
-    #         with self.subTest(msg='for shard {}'.format(shard_id)):
-    #             print('... The first instance in shard {} is {}'.format(shard_id, members[0]), end=', ')
-    #             (first_instance,) = [instance for instance in all_instances if instance.socket_address == members[0]]
-    #             print(first_instance)
+            with self.subTest(msg='for shard {}'.format(shard_id)):
+                print('... The first instance in shard {} is {}'.format(shard_id, members[0]), end=', ')
+                (first_instance,) = [instance for instance in all_instances if instance.socket_address == members[0]]
+                print(first_instance)
 
-    #             print('>>> Get key-count for shard {} from {}'.format(shard_id, first_instance))
-    #             response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, first_instance.published_port, shard_id))
-    #             self.assertEqual(response.status_code, 200)
-    #             self.assertIn('shard-key-count', response.json())
-    #             shard_key_counts[shard_id] = response.json()['shard-key-count']
-    #             self.assertGreater(shard_key_counts[shard_id], 1)
+                print('>>> Get key-count for shard {} from {}'.format(shard_id, first_instance))
+                response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, first_instance.published_port, shard_id))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-key-count', response.json())
+                shard_key_counts[shard_id] = response.json()['shard-key-count']
+                self.assertGreater(shard_key_counts[shard_id], 1)
 
-    #         print('=== Check that everybody reports key-count {} for shard {}'.format(shard_key_counts[shard_id], shard_id))
-    #         for instance in all_instances: 
-    #             with self.subTest(msg='for shard {}; at instance {}'.format(shard_id, instance)):
-    #                 response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, instance.published_port, shard_id))
-    #                 self.assertEqual(response.status_code, 200)
-    #                 self.assertIn('shard-key-count', response.json())
-    #                 self.assertEqual(shard_key_counts[shard_id], response.json()['shard-key-count'])
+            print('=== Check that everybody reports key-count {} for shard {}'.format(shard_key_counts[shard_id], shard_id))
+            for instance in all_instances: 
+                with self.subTest(msg='for shard {}; at instance {}'.format(shard_id, instance)):
+                    response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, instance.published_port, shard_id))
+                    self.assertEqual(response.status_code, 200)
+                    self.assertIn('shard-key-count', response.json())
+                    self.assertEqual(shard_key_counts[shard_id], response.json()['shard-key-count'])
 
-    #     self.assertEqual(sum(shard_key_counts.values()), self.key_count, msg='Sum of key-counts-in-shards must equal total-keys')
+        self.assertEqual(sum(shard_key_counts.values()), self.key_count, msg='Sum of key-counts-in-shards must equal total-keys')
 
-    #     print('=== Check whether keys are distributed almost uniformly')
+        print('=== Check whether keys are distributed almost uniformly')
 
-    #     equal_share = self.key_count / self.shard_count
-    #     min_share = equal_share * 0.75
-    #     max_share = equal_share * 1.25
+        equal_share = self.key_count / self.shard_count
+        min_share = equal_share * 0.75
+        max_share = equal_share * 1.25
 
-    #     for shard_id, shard_key_count in shard_key_counts.items():
-    #         with self.subTest(msg='for shard {}'.format(shard_id)):
-    #             # min_share < shard_key_count < max_share
-    #             self.assertLess(min_share, shard_key_count           )
-    #             self.assertLess(           shard_key_count, max_share)
+        for shard_id, shard_key_count in shard_key_counts.items():
+            with self.subTest(msg='for shard {}'.format(shard_id)):
+                # min_share < shard_key_count < max_share
+                self.assertLess(min_share, shard_key_count           )
+                self.assertLess(           shard_key_count, max_share)
 
 
     # def test_g_add_new_node(self):

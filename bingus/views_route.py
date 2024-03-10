@@ -426,14 +426,17 @@ def get_key_count(ID):
     if ID not in shard_ids:
         return make_response({"error": "Shard ID does not exist"}, 404) 
     elif ID != shard_id:
-        # WIP - Forward to replicas in the requested shard
-        try:
-            response = requests.get(f"http://shard/key-count/{ID}", json=dict())
-        except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
-            #WIP - should this be a buffer send to ensure the forward doesnt get lost?
-            pass
+        while True:
+            for node in shards[ID]:
+                try:
+                    response = requests.get(f"http://{node}/shard/key-count/{ID}", json=dict())
+                    key_count = response.json()["shard-key-count"]
+                    return make_response({"shard-key-count": key_count}, 200)
+                except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
+                    continue
     else:
         return make_response({"shard-key-count": len(_store)}, 200)
+
 
 # Assign the node <ID:PORT> to the shard <ID>
 # Given JSON body {"socket-address": <IP:PORT>}
