@@ -6,7 +6,7 @@ from threading import Thread, Lock
 from vectorclock import VectorClock
 from queue import Queue
 import time
-from hashlib import md5
+import hashlib
 
 views_route = Blueprint("views", __name__)
 _store = dict()
@@ -18,6 +18,7 @@ shard_count = 0 # current # of shards in the system
 PULSE_INTERVAL = 0.5 # duration of time between pulse request sends
 update_views_lock = Lock()
 
+OUTPUT_SPACE = 128
 views = set()
 socket_address = None # this replica's address
 local_vc = dict()
@@ -31,8 +32,38 @@ ring_positions = dict()
 def print_replica():
     print(f"_store: {_store}, views: {views}, VC: {local_vc}", flush=True)
 
-def get_local_causal_metadata():
-    return {"vc": local_vc}
+def get_local_causal_metadata(sender=True, sender_vc_all=None):
+    #print("sender_vc_all", sender_vc_all, type(shard_id),  flush=True)
+    if not sender:
+        if not sender_vc_all:
+            sender_vc_all = dict()
+        sender_vc_all[str(shard_id)] = local_vc
+        return {"vc" : sender_vc_all} 
+        #sreturn {"vc" : {shard_id : local_vc}}
+
+    return {"vc":local_vc}
+
+def forward(req, addr, key):
+    print(f"forward to {addr}, with key {key}", flush=True)
+    response = requests.request(req.method, f"http://{addr}/kvs/{key}",json=req.json)
+    print(f"forward response, {response.json()}", flush=True)
+    return make_response(response.json(), response.status_code)
+def consistent_hash_key(key):
+    """determine which shard key needs to go to
+
+    Returns:
+        address that key should be processed at  
+    """
+    raw_hash = hashlib.md5(bytes(key.encode('ascii')))
+    hash_as_decimal = int(raw_hash.hexdigest(),16)
+
+    key_ring_pos =  hash_as_decimal % OUTPUT_SPACE
+
+    # walk along ring to nearest node(clockwise)
+    while key_ring_pos not in ring_positions:
+        key_ring_pos = (key_ring_pos + 1) % OUTPUT_SPACE
+    
+    return ring_positions[key_ring_pos]
 
 
 def buffer_send_kvs(req, key, addr):
@@ -42,14 +73,15 @@ def buffer_send_kvs(req, key, addr):
             metadata = req.json
             metadata["causal-metadata"] = dict(sender=socket_address, vc=local_vc)
             response = requests.request(f"{req.method}", f"http://{addr}/kvs/{key}", json=metadata, timeout=10)
-            if 'get-vc' in response.json() and VectorClock(response.json()['get-vc']["vc"]) == VectorClock(local_vc):
+            print("buffer_send_kvs", response.json(), flush=True)
+            if 'get-vc' in response.json() and VectorClock(response.json()['get-vc']) == VectorClock(local_vc):
                 break
             if response.status_code != 503:
                 break
         except requests.Timeout:
             with update_views_lock:
                 update_views({addr}, removed=True)
-            break
+            continue
         except (requests.ConnectionError, requests.RequestException):
             with update_views_lock:
                 update_views({addr}, removed=True)
@@ -123,10 +155,10 @@ def relay_view(relayed_request):
 def relay_kvs(relayed_request, key):
     local_vc[socket_address] += 1
     # relay request
-    for view in views:
-        if view != socket_address:
+    for member in shards[shard_id]:
+        if member != socket_address:
             # Send request until it is received or the receiver is down
-            buffer_send_kvs(relayed_request, key, view)
+            buffer_send_kvs(relayed_request, key, member)
 
 def valid_json(json_str):
     '''
@@ -154,10 +186,16 @@ def get_metadata(req):
         or (None, sender_vc)
     """
     sender = None
-    if "sender" in req.json["causal-metadata"]:
-        sender = req.json["causal-metadata"]["sender"]
-    return (sender, req.json["causal-metadata"]["vc"])
-
+    meta = req.json["causal-metadata"]
+    sender_vc = meta['vc']
+    if "sender" in meta:
+        sender = meta["sender"]
+        return (sender, sender_vc,None)
+    #print("metadata: ", sender_vc, type(shard_id), flush=True)
+    if str(shard_id) not in sender_vc:
+        sender_vc[str(shard_id)] = local_vc
+    return (sender, sender_vc[str(shard_id)], sender_vc)
+    
 # --------------------------------------------------------------------------------------------------------------
 # Key Value Store endpoint
 # --------------------------------------------------------------------------------------------------------------
@@ -166,16 +204,27 @@ def get_metadata(req):
 def adjust_mapping(key):
     global local_vc
     global _store
+    print("got request", request.json, flush=True)
+    
 
+
+    #print("receiving req with meta: ", request.json, flush=True)
     # key length must be less than 50 characters
     if len(key) > MIN_KEY_LENGTH:
         return make_response(jsonify(error="Key is too long"), 400)
     
     sender = None
     sender_vc = None
+    sender_vc_all = None
     # Perform logic if causal-metadata is present(not None)
     if request.json["causal-metadata"]:
-        sender, sender_vc = get_metadata(request)
+        sender, sender_vc, sender_vc_all = get_metadata(request)
+        if not sender:
+            # hash value to determine whether to forward or proceed locally
+            addr_to_send= consistent_hash_key(key)
+            if addr_to_send != socket_address:
+                return forward(request, addr_to_send,key)
+        print("received sender vc", sender_vc, "with stuff :", sender_vc_all, flush=True)
         # Check for dependencies
         dependency_result = dependency_check(sender, sender_vc)
         # There is a dependency return 503
@@ -198,12 +247,12 @@ def adjust_mapping(key):
         # Only broadcast delivered client requests
         if not sender:
             relay_kvs(request, key)
-        
+
         # Created new mapping
-        res = make_response({"result": "created", "causal-metadata": get_local_causal_metadata()}, 201)
+        res = make_response({"result": "created", "causal-metadata": get_local_causal_metadata(sender, sender_vc_all)}, 201)
         # Replaced old mapping
         if key in _store:
-            res = make_response({"result": "replaced", "causal-metadata": get_local_causal_metadata()}, 200)
+            res = make_response({"result": "replaced", "causal-metadata": get_local_causal_metadata(sender, sender_vc_all)}, 200)
         # Update store
         _store[key] = value
         
@@ -378,14 +427,11 @@ def get_key_count(ID):
         return make_response({"error": "Shard ID does not exist"}, 404) 
     elif ID != shard_id:
         # WIP - Forward to replicas in the requested shard
-        while True:
-            for node in shards[ID]:
-                try:
-                    response = requests.get(f"http://{node}/shard/key-count/{ID}", json=dict())
-                    key_count = response.json()["shard-key-count"]
-                    return make_response({"shard-key-count": key_count}, 200)
-                except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
-                    continue
+        try:
+            response = requests.get(f"http://shard/key-count/{ID}", json=dict())
+        except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
+            #WIP - should this be a buffer send to ensure the forward doesnt get lost?
+            pass
     else:
         return make_response({"shard-key-count": len(_store)}, 200)
 

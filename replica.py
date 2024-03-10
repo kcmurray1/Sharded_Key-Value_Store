@@ -54,7 +54,7 @@ def partition_by_hash(replicas, shard_count):
         shard_id = hash_as_decimal % shard_count
         initial_distribution[shard_id].add(replica)
         # calculate position on imaginary ring
-        ring_pos[replica] = hash_as_decimal % HASH_OUTPUT_SPACE
+        ring_pos[hash_as_decimal % HASH_OUTPUT_SPACE] = replica 
     # each partition must have at least 2 nodes
     initial_distribution = balance_shards(initial_distribution)
     return (initial_distribution, ring_pos)
@@ -79,7 +79,7 @@ def notify_replicas(view_points, socket_address):
                 views_route.views.add(view_address)
 
                 # update local clock
-                if 'replica_data' in metadata and (find_replica_id(views_route.shards, view_address) == views_route.shard_id):
+                if 'replica_data' in metadata and (find_replica_id(views_route.shards, view_address) == views_route.shard_id):                   
                     # compare with padding
                     received_vc = metadata['replica_data']['vc']
                     # pad local clock {a: 0, b:0}
@@ -103,10 +103,11 @@ def notify_replicas(view_points, socket_address):
           f"views {views_route.views}\n"
           f"local_clocl {views_route.local_vc}\n"
           f"shard_id {views_route.shard_id}\n"
+          f"shards {views_route.shards}\n"
           f"ring_positions {views_route.ring_positions}", flush=True)
     # Start Pulse Sender Thread
-    h = threading.Timer(TIME_TO_BOOT * 2, pulse_starter)
-    h.start()
+    # h = threading.Timer(TIME_TO_BOOT * 2, pulse_starter)
+    # h.start()
 
 # Build then run Replica
 def startup():

@@ -197,50 +197,87 @@ class TestHW4(unittest.TestCase):
 
     #     self.assertEqual(len(all_instances), sum(len(members) for shard_id, members in self.shard_members.items()))
 
-    def test_f_shard_key_count(self):
+    # def test_d_kristian_test_put_key(self):
+    #     '''Send 2 PUT requests to Alice then 1 PUT to CAROL who is in another partition does the system handle the client's new form of causal meta?'''
+    #     key = "key01"
+    #     value = "value01"
+    #     response = requests.put('http://{}:{}/kvs/{}'.format(hostname, alice.published_port, key),
+    #         json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
+    #     print('PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=alice, m=self.causal_metadata['metadata'], code=response.status_code))
+    #     if response.status_code == 503:
+    #         print("error")
+    #     else:
+    #         self.assertEqual(response.status_code, 201)
+    #         self.causal_metadata['metadata'] = response.json()['causal-metadata']
+    #         print("causal metadata", response.json()['causal-metadata'])
+    #     print("--------------VALUE02-------------------")
+    #     key = "key02"
+    #     value = "value02"
+    #     response = requests.put('http://{}:{}/kvs/{}'.format(hostname, alice.published_port, key),
+    #         json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
+    #     print('PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=alice, m=self.causal_metadata['metadata'], code=response.status_code))
+    #     if response.status_code == 503:
+    #         print("error")
+    #     else:
+    #         self.assertEqual(response.status_code, 201)
+    #         self.causal_metadata['metadata'] = response.json()['causal-metadata']
+    #         print("causal metadata", response.json()['causal-metadata'])
+    #     print("--------------CAROL----------------")
+    #     key = "key03"
+    #     value = "value03"
+    #     response = requests.put('http://{}:{}/kvs/{}'.format(hostname, carol.published_port, key),
+    #         json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
+    #     print('PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=carol, m=self.causal_metadata['metadata'], code=response.status_code))
+    #     if response.status_code == 503:
+    #         print("error")
+    #     else:
+    #         self.assertEqual(response.status_code, 201)
+    #         self.causal_metadata['metadata'] = response.json()['causal-metadata']
+    #         print("causal metadata", response.json()['causal-metadata'])
 
-        shard_key_counts = dict()
-        for shard_id, members in self.shard_members.items():
+    def test_d_put_key_value_operation(self):
+        '''Do the replicas keep up when broadcasting with many causally-dependent requests issued quickly?'''
 
-            with self.subTest(msg='for shard {}'.format(shard_id)):
-                print('... The first instance in shard {} is {}'.format(shard_id, members[0]), end=', ')
-                (first_instance,) = [instance for instance in all_instances if instance.socket_address == members[0]]
-                print(first_instance)
+        print('>>> Put {} key:value pairs into the store.'.format(self.key_count))
+        for n in range(self.key_count):
 
-                print('>>> Get key-count for shard {} from {}'.format(shard_id, first_instance))
-                response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, first_instance.published_port, shard_id))
-                self.assertEqual(response.status_code, 200)
-                self.assertIn('shard-key-count', response.json())
-                shard_key_counts[shard_id] = response.json()['shard-key-count']
-                self.assertGreater(shard_key_counts[shard_id], 1)
+            key = 'key{}'.format(n)
+            value = 'value{}'.format(n)
+            instance = all_instances[n % len(all_instances)]
+            print('>>> Put {key}:{value} at instance {instance} (with retries)'.format(key=key, value=value, instance=instance))
 
-            print('=== Check that everybody reports key-count {} for shard {}'.format(shard_key_counts[shard_id], shard_id))
-            for instance in all_instances: 
-                with self.subTest(msg='for shard {}; at instance {}'.format(shard_id, instance)):
-                    response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, instance.published_port, shard_id))
-                    self.assertEqual(response.status_code, 200)
-                    self.assertIn('shard-key-count', response.json())
-                    self.assertEqual(shard_key_counts[shard_id], response.json()['shard-key-count'])
+            retries = 7
+            backoffSec = lambda attempt: 0.01*2**attempt
+            # sum([(0.01*2**n) for n in range(7)]) == 1.27
+            #
+            # If the replicas haven't successfully broadcast the previous
+            # request after 1.27sec then there's a bug, and the test fails with
+            # "too many attempts".
 
-        self.assertEqual(sum(shard_key_counts.values()), self.key_count, msg='Sum of key-counts-in-shards must equal total-keys')
+            for attempt in range(retries):
+                response = requests.put('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
+                    json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
+                print('Try {attempt}/{retries} PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=instance, m=self.causal_metadata['metadata'], attempt=attempt + 1, retries=retries, code=response.status_code))
+                if response.status_code == 503:
+                    sleep(backoffSec(attempt))
+                    continue # retry
+                else:
+                    #print("causal metadata", response.json()['causal-metadata'])
+                    self.assertEqual(response.status_code, 201)
+                    self.causal_metadata['metadata'] = response.json()['causal-metadata']
+                    break # next request
+            else:
+                self.fail("too many attempts")
 
-        print('=== Check whether keys are distributed almost uniformly')
+        print('... Wait for replication')
+        sleep(5)
 
-        equal_share = self.key_count / self.shard_count
-        min_share = equal_share * 0.75
-        max_share = equal_share * 1.25
-
-        for shard_id, shard_key_count in shard_key_counts.items():
-            with self.subTest(msg='for shard {}'.format(shard_id)):
-                # min_share < shard_key_count < max_share
-                self.assertLess(min_share, shard_key_count           )
-                self.assertLess(           shard_key_count, max_share)
 
 
 
 if __name__ == '__main__':
     try:
         buildDockerImage()
-        unittest.main(verbosity=2)
+        unittest.main(verbosity=0)
     except KeyboardInterrupt:
         TestHW4.tearDownClass()

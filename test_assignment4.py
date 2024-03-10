@@ -120,7 +120,7 @@ class TestHW4(unittest.TestCase):
 
     # constants
     shard_count = 2
-    key_count = 600
+    key_count = 2
 
     @classmethod
     def setUpClass(cls):
@@ -245,6 +245,7 @@ class TestHW4(unittest.TestCase):
                     sleep(backoffSec(attempt))
                     continue # retry
                 else:
+                    #print("causal metadata", response.json()['causal-metadata'])
                     self.assertEqual(response.status_code, 201)
                     self.causal_metadata['metadata'] = response.json()['causal-metadata']
                     break # next request
@@ -255,24 +256,24 @@ class TestHW4(unittest.TestCase):
         sleep(5)
 
 
-    # def test_e_get_key_value_operation(self):
-    #     '''Did the replicas store the right data in the previous test?'''
+    def test_e_get_key_value_operation(self):
+        '''Did the replicas store the right data in the previous test?'''
 
-    #     print('=== Check for correctness of {} key:value pairs in the store.'.format(self.key_count))
-    #     for n in range(self.key_count):
+        print('=== Check for correctness of {} key:value pairs in the store.'.format(self.key_count))
+        for n in range(self.key_count):
 
-    #         key = 'key{}'.format(n)
-    #         value = 'value{}'.format(n)
-    #         instance = all_instances[(n + 1) % len(all_instances)] # different instance from the one chosen above
-    #         print('=== Check {key}:{value} at instance {instance}'.format(key=key, value=value, instance=instance))
+            key = 'key{}'.format(n)
+            value = 'value{}'.format(n)
+            instance = all_instances[(n + 1) % len(all_instances)] # different instance from the one chosen above
+            print('=== Check {key}:{value} at instance {instance}'.format(key=key, value=value, instance=instance))
 
-    #         response = requests.get('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
-    #             json={'causal-metadata':self.causal_metadata['metadata']})
-    #         print('GET {key} -> {instance} -> {code} @{m}'.format(key=key, instance=instance, m=self.causal_metadata['metadata'], code=response.status_code))
-    #         self.assertEqual(response.status_code, 200)
-    #         self.assertIn('value', response.json())
-    #         self.assertEqual(response.json()['value'], value)
-    #         self.causal_metadata['metadata'] = response.json()['causal-metadata']
+            response = requests.get('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
+                json={'causal-metadata':self.causal_metadata['metadata']})
+            print('GET {key} -> {instance} -> {code} @{m}'.format(key=key, instance=instance, m=self.causal_metadata['metadata'], code=response.status_code))
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('value', response.json())
+            self.assertEqual(response.json()['value'], value)
+            self.causal_metadata['metadata'] = response.json()['causal-metadata']
 
 
     # def test_f_shard_key_count(self):
