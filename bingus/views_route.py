@@ -446,16 +446,60 @@ def get_key_count(ID):
 # Given JSON body {"socket-address": <IP:PORT>}
 @views_route.route("/shard/add-member/<ID>", methods=["PUT"])
 def add_member(ID):
-    try:
-        response = requests.put(f"http://assign/{ID}", json=dict())
-    except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
-        pass
+    ID = int(ID)
+    shard_ids = list(shards.keys())
+    add_socket_address = in_json("socket-address", request.json)
+    if not add_socket_address:
+        return make_response(dict(error="Missing <IP:PORT> header"),400)
+    
+    if add_socket_address not in views:
+        return make_response(dict(error=f"Node with port {add_socket_address} does not exist"),404)
+
+    if add_socket_address not in views or ID not in shard_ids:
+        return make_response(dict(error=f"Shard with ID {ID} does not exist"),404)
+
+    for node in views:
+        while True:
+            # Forward to every replica in the system
+            try:
+                response = requests.put(f"http://{node}/assign/{ID}", json=request.json)
+                break
+            except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
+                # WIP - crash detection might not save this from looping indefinitely. TODO: verify this
+                pass
+    
+    return make_response(dict(result="node added to shard"),200)
 
 @views_route.route("/assign/<ID>", methods=["PUT"])
 def assign_to_shard(ID):
     global shard_id
-    shard_id = ID
-    # WIP, update members etc.
+    ID = int(ID)
+    shard_ids = list(shards.keys())
+    add_socket_address = in_json("socket-address", request.json)
+
+    # WIP
+    # update shards
+    shards[shard_id].pop(add_socket_address)
+    shards[ID].add(add_socket_address)
+
+    if socket_address != add_socket_address:
+        if shard_id == ID:
+            # add new node to VC
+            local_vc.add(add_socket_address)
+        else:
+            # remove from VC if formerly in the same shard
+            if add_socket_address in local_vc:
+                local_vc.pop(add_socket_address)
+    else:
+        if shard_id != ID:
+            # update shard_id & clear _store
+            shard_id = ID
+            _store.clear()
+        else:
+            # nothing needs to be done
+            pass
+    
+    return make_response(dict(result="node added to shard"),200)
 
 
 # Trigger a reshard into <INTEGER> shards, maintaining fault-tolerance
