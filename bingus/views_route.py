@@ -7,6 +7,7 @@ from vectorclock import VectorClock
 from queue import Queue
 import time
 import hashlib
+import math
 
 views_route = Blueprint("views", __name__)
 _store = dict()
@@ -17,6 +18,8 @@ shard_count = 0 # current # of shards in the system
 # Pulse vars 
 PULSE_INTERVAL = 0.5 # duration of time between pulse request sends
 update_views_lock = Lock()
+
+MIN_NODES = 2
 
 OUTPUT_SPACE = 128
 views = set()
@@ -48,6 +51,7 @@ def forward(req, addr, key):
     response = requests.request(req.method, f"http://{addr}/kvs/{key}",json=req.json)
     print(f"forward response, {response.json()}", flush=True)
     return make_response(response.json(), response.status_code)
+
 def consistent_hash_key(key):
     """determine which shard key needs to go to
 
@@ -458,5 +462,15 @@ def assign_to_shard(ID):
 # Given JSON body {"shard-count": <INTEGER>}
 @views_route.route("/shard/reshard", methods=["PUT"])
 def reshard():
+    # validate JSON body
+    new_shard_count = in_json("shard-count", request.json) 
+    if not new_shard_count:
+        return make_response(dict(error="Missing shard-count"),400)
+    
+    # validate new_shard_count
+    if math.floor(len(views)/new_shard_count) < MIN_NODES:
+        return make_response(dict(error="Not enough nodes to provide fault tolerance with requested shard count"), 400)
+    
+    # Reshard
     pass
 

@@ -2,12 +2,13 @@
 to assign location on imaginary ring"""
 
 import hashlib
-
-NUM_SHARDS = 3
+import math
+NUM_SHARDS = 2
 HASH_OUTPUT_SPACE = 128
-MIN_NODES_PER_SHARD = 2
+ 
 replicas = {"alice" : "10.10.0.2", "bob" : "10.10.0.3", "carol": "10.10.0.4",
-            "dave":"10.10.0.5", "erin" : "10.10.0.6", "frank" : "10.10.0.7"}
+            "dave":"10.10.0.5", "erin" : "10.10.0.6", "frank" : "10.10.0.7", "grace" : "10.10.0.7"}
+MIN_NODES_PER_SHARD = math.floor(len(replicas)/NUM_SHARDS)
 
 """Couple of approaches to assigning shard_ids
 (1) Independently, where each replcia performs some calculation to determine shard_id

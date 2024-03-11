@@ -6,16 +6,19 @@ from bingus import create_app, views_route
 from vectorclock import VectorClock
 import threading
 import hashlib
+import math
 TIME_TO_BOOT = 2.5
 HASH_OUTPUT_SPACE = 128
-MIN_NODES_PER_SHARD = 2
-
-def balance_shards(shards):
+GLOBAL_MIN = 2
+def balance_shards(shards, MIN_NODES_PER_SHARD):
     """
     Returns:
         dictionary containing shards with at least 2 nodes assigned
         Else returns None
     """
+    if MIN_NODES_PER_SHARD < GLOBAL_MIN:
+        return "HUGE ERROR"
+    
     fault_tolerant = dict()
     
     # Find shard that contain < 2 nodes
@@ -55,8 +58,9 @@ def partition_by_hash(replicas, shard_count):
         initial_distribution[shard_id].add(replica)
         # calculate position on imaginary ring
         ring_pos[hash_as_decimal % HASH_OUTPUT_SPACE] = replica 
+    
     # each partition must have at least 2 nodes
-    initial_distribution = balance_shards(initial_distribution)
+    initial_distribution = balance_shards(initial_distribution, math.floor(len(replicas)/shard_count))
     return (initial_distribution, ring_pos)
 
 def find_replica_id(shards, replica_to_find):
@@ -106,8 +110,8 @@ def notify_replicas(view_points, socket_address):
           f"shards {views_route.shards}\n"
           f"ring_positions {views_route.ring_positions}", flush=True)
     # Start Pulse Sender Thread
-    # h = threading.Timer(TIME_TO_BOOT * 2, pulse_starter)
-    # h.start()
+    h = threading.Timer(TIME_TO_BOOT * 2, pulse_starter)
+    h.start()
 
 # Build then run Replica
 def startup():

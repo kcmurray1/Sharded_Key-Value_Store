@@ -120,7 +120,7 @@ class TestHW4(unittest.TestCase):
 
     # constants
     shard_count = 2
-    key_count = 600 # 2
+    key_count = 600
 
     @classmethod
     def setUpClass(cls):
@@ -144,13 +144,13 @@ class TestHW4(unittest.TestCase):
         sleep(5) # give time for them to bind ports, update views, etc..
         os.system("docker ps")
 
-    @classmethod
-    def tearDownClass(cls):
-        print("= Cleaning up resources from this run..")
-        killInstance(grace, required=False) # grace is the extra instance not part of all_instances
-        for instance in all_instances:
-            killInstance(instance)
-        removeSubnet()
+    # @classmethod
+    # def tearDownClass(cls):
+    #     print("= Cleaning up resources from this run..")
+    #     killInstance(grace, required=False) # grace is the extra instance not part of all_instances
+    #     for instance in all_instances:
+    #         killInstance(instance)
+    #     removeSubnet()
 
 
     def test_a_get_shard_ids(self):
@@ -316,171 +316,171 @@ class TestHW4(unittest.TestCase):
                 self.assertLess(           shard_key_count, max_share)
 
 
-    # def test_g_add_new_node(self):
+    def test_g_add_new_node(self):
 
-    #     print('>>> Start up {}'.format(grace))
-    #     runInstance(grace, all_instances + [grace])
+        print('>>> Start up {}'.format(grace))
+        runInstance(grace, all_instances + [grace])
 
-    #     print('... Give time to bind ports, update views, etc.')
-    #     sleep(5)
+        print('... Give time to bind ports, update views, etc.')
+        sleep(5)
 
-    #     print('=== Check that everybody sees {} in the view'.format(grace))
-    #     for instance in all_instances:
-    #         with self.subTest(msg='at instance {}'.format(instance)):
-    #             response = requests.get('http://{}:{}/view'.format(hostname, instance.published_port))
-    #             self.assertEqual(response.status_code, 200)
-    #             self.assertIn('view', response.json())
-    #             self.assertIn(grace.socket_address, response.json()['view'])
+        print('=== Check that everybody sees {} in the view'.format(grace))
+        for instance in all_instances:
+            with self.subTest(msg='at instance {}'.format(instance)):
+                response = requests.get('http://{}:{}/view'.format(hostname, instance.published_port))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('view', response.json())
+                self.assertIn(grace.socket_address, response.json()['view'])
 
-    #     assigned_shard = random.choice(self.shard_ids)
-    #     shard_assigner = random.choice(all_instances)
+        assigned_shard = random.choice(self.shard_ids)
+        shard_assigner = random.choice(all_instances)
 
-    #     print('>>> Assign {} to shard {} with a request to {}'.format(grace, assigned_shard, shard_assigner))
-    #     response = requests.put('http://{}:{}/shard/add-member/{}'.format(hostname, shard_assigner.published_port, assigned_shard),
-    #             json={'socket-address': grace.socket_address})
-    #     self.assertEqual(response.status_code, 200)
-    #     del shard_assigner
+        print('>>> Assign {} to shard {} with a request to {}'.format(grace, assigned_shard, shard_assigner))
+        response = requests.put('http://{}:{}/shard/add-member/{}'.format(hostname, shard_assigner.published_port, assigned_shard),
+                json={'socket-address': grace.socket_address})
+        self.assertEqual(response.status_code, 200)
+        del shard_assigner
 
-    #     print('... Give time to replicate keys.')
-    #     sleep(5)
+        print('... Give time to replicate keys.')
+        sleep(5)
 
-    #     print('=== Check the shard-id of {} is {}'.format(grace, assigned_shard))
-    #     response = requests.get('http://{}:{}/shard/node-shard-id'.format(hostname, grace.published_port))
-    #     self.assertEqual(response.status_code, 200)
-    #     self.assertIn('node-shard-id', response.json())
-    #     self.assertEqual(response.json()['node-shard-id'], assigned_shard)
+        print('=== Check the shard-id of {} is {}'.format(grace, assigned_shard))
+        response = requests.get('http://{}:{}/shard/node-shard-id'.format(hostname, grace.published_port))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('node-shard-id', response.json())
+        self.assertEqual(response.json()['node-shard-id'], assigned_shard)
 
-    #     print('=== Check that {} is in shard {} members at each instance'.format(grace, assigned_shard))
-    #     for instance in all_instances:
-    #         with self.subTest(msg='at instance {}'.format(instance)):
-    #             response = requests.get('http://{}:{}/shard/members/{}'.format(hostname, instance.published_port, assigned_shard))
-    #             self.assertEqual(response.status_code, 200)
-    #             self.assertIn('shard-members', response.json())
-    #             self.assertIn(grace.socket_address, response.json()['shard-members'])
+        print('=== Check that {} is in shard {} members at each instance'.format(grace, assigned_shard))
+        for instance in all_instances:
+            with self.subTest(msg='at instance {}'.format(instance)):
+                response = requests.get('http://{}:{}/shard/members/{}'.format(hostname, instance.published_port, assigned_shard))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-members', response.json())
+                self.assertIn(grace.socket_address, response.json()['shard-members'])
 
-    #     print('=== Check that all instances agree about shard {} key-count'.format(assigned_shard))
+        print('=== Check that all instances agree about shard {} key-count'.format(assigned_shard))
 
-    #     response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, grace.published_port, assigned_shard))
-    #     self.assertEqual(response.status_code, 200)
-    #     self.assertIn('shard-key-count', response.json())
-    #     reported_key_count = response.json()['shard-key-count']
+        response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, grace.published_port, assigned_shard))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('shard-key-count', response.json())
+        reported_key_count = response.json()['shard-key-count']
 
-    #     print('=== Check that everybody reports key-count {} for shard {}'.format(reported_key_count, assigned_shard))
-    #     for instance in all_instances: 
-    #         with self.subTest(msg='at instance {}'.format(instance)):
-    #             response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, instance.published_port, assigned_shard))
-    #             self.assertEqual(response.status_code, 200)
-    #             self.assertIn('shard-key-count', response.json())
-    #             self.assertEqual(response.json()['shard-key-count'], reported_key_count)
-
-
-    # def test_h_impossible_reshard(self):
-
-    #     print('=== Check that an impossible reshard is rejected')
-    #     instance = random.choice(all_instances)
-    #     response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 10})
-    #     self.assertEqual(response.status_code, 400)
+        print('=== Check that everybody reports key-count {} for shard {}'.format(reported_key_count, assigned_shard))
+        for instance in all_instances: 
+            with self.subTest(msg='at instance {}'.format(instance)):
+                response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, instance.published_port, assigned_shard))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-key-count', response.json())
+                self.assertEqual(response.json()['shard-key-count'], reported_key_count)
 
 
-    # def test_i_possible_reshard(self):
+    def test_h_impossible_reshard(self):
 
-    #     instance = random.choice(all_instances)
-    #     print('>>> Do a reshard at {}'.format(instance))
-    #     with self.subTest(msg='reshard at {}'.format(instance)):
-    #         response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 3})
-    #         self.assertEqual(response.status_code, 200)
-
-    #     print('... Wait for keys to rebalance')
-    #     sleep(20)
-
-    #     instance = random.choice(all_instances)
-    #     print('>>> Get shard-ids from {}'.format(instance))
-    #     with self.subTest(msg='shard-ids from {}'.format(instance)):
-    #         response = requests.get('http://{}:{}/shard/ids'.format(hostname, instance.published_port))
-    #         self.assertEqual(response.status_code, 200)
-    #         shard_ids = response.json()['shard-ids']
-    #         self.assertEqual(len(shard_ids), 3)
-
-    #     print('>>> Get all shard members')
-    #     shard_members = dict()
-
-    #     for shard_id in shard_ids:
-    #         instance = random.choice(all_instances)
-    #         print('>>> Get shard {} members from {}'.format(shard_id, instance))
-    #         with self.subTest(msg='shard {} members from {}'.format(shard_id, instance)):
-    #             response = requests.get('http://{}:{}/shard/members/{}'.format(hostname, instance.published_port, shard_id))
-    #             self.assertEqual(response.status_code, 200)
-    #             self.assertIn('shard-members', response.json())
-    #             shard_members[shard_id] = response.json()['shard-members']
-    #             self.assertGreater(len(shard_members[shard_id]), 1)
-
-    #     print('... Shard members:', shard_members)
-    #     self.assertEqual(sum(len(members) for members in shard_members.values()), len(all_instances) + 1,
-    #             msg='The total number of shard members is the length of all_instances, plus grace')
+        print('=== Check that an impossible reshard is rejected')
+        instance = random.choice(all_instances)
+        response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 10})
+        self.assertEqual(response.status_code, 400)
 
 
-    #     print('>>> Check that each node sees itself as part of the correct shard')
-    #     for instance in all_instances:
-    #         with self.subTest(msg='at instance {}'.format(instance)):
-    #             print('>>> Get the node-shard-id from {}'.format(instance))
-    #             response = requests.get('http://{}:{}/shard/node-shard-id'.format(hostname, instance.published_port))
-    #             self.assertEqual(response.status_code, 200)
-    #             self.assertIn('node-shard-id', response.json())
-    #             instance_shard_id = response.json()['node-shard-id']
+    def test_i_possible_reshard(self):
 
-    #             print('=== Check that the {}\'s shard id {} fits with previously collected data'.format(instance, instance_shard_id))
-    #             self.assertIn(instance_shard_id, shard_members)
-    #             self.assertIn(instance.socket_address, shard_members[instance_shard_id])
+        instance = random.choice(all_instances)
+        print('>>> Do a reshard at {}'.format(instance))
+        with self.subTest(msg='reshard at {}'.format(instance)):
+            response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 3})
+            self.assertEqual(response.status_code, 200)
 
+        print('... Wait for keys to rebalance')
+        sleep(20)
 
-    #     print('>>> Check that shard key counts have the right total')
-    #     shard_key_counts = dict()
-    #     for shard_id, members in shard_members.items():
+        instance = random.choice(all_instances)
+        print('>>> Get shard-ids from {}'.format(instance))
+        with self.subTest(msg='shard-ids from {}'.format(instance)):
+            response = requests.get('http://{}:{}/shard/ids'.format(hostname, instance.published_port))
+            self.assertEqual(response.status_code, 200)
+            shard_ids = response.json()['shard-ids']
+            self.assertEqual(len(shard_ids), 3)
 
-    #         with self.subTest(msg='for shard {}'.format(shard_id)):
-    #             print('... The first instance in shard {} is {}'.format(shard_id, members[0]), end=', ')
-    #             (first_instance,) = [instance for instance in all_instances if instance.socket_address == members[0]]
-    #             print(first_instance)
+        print('>>> Get all shard members')
+        shard_members = dict()
 
-    #             print('>>> Get key-count for shard {} from {}'.format(shard_id, first_instance))
-    #             response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, first_instance.published_port, shard_id))
-    #             self.assertEqual(response.status_code, 200)
-    #             self.assertIn('shard-key-count', response.json())
-    #             shard_key_counts[shard_id] = response.json()['shard-key-count']
-    #             self.assertGreater(shard_key_counts[shard_id], 1)
+        for shard_id in shard_ids:
+            instance = random.choice(all_instances)
+            print('>>> Get shard {} members from {}'.format(shard_id, instance))
+            with self.subTest(msg='shard {} members from {}'.format(shard_id, instance)):
+                response = requests.get('http://{}:{}/shard/members/{}'.format(hostname, instance.published_port, shard_id))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-members', response.json())
+                shard_members[shard_id] = response.json()['shard-members']
+                self.assertGreater(len(shard_members[shard_id]), 1)
 
-    #     self.assertEqual(sum(shard_key_counts.values()), self.key_count,
-    #             msg='Sum of key-counts-in-shards must equal total-keys')
-
-
-    #     print('=== Check whether keys are distributed almost uniformly')
-
-    #     equal_share = self.key_count / len(shard_ids)
-    #     min_share = equal_share * 0.75
-    #     max_share = equal_share * 1.25
-
-    #     for shard_id, shard_key_count in shard_key_counts.items():
-    #         with self.subTest(msg='for shard {}'.format(shard_id)):
-    #             # min_share < shard_key_count < max_share
-    #             self.assertLess(min_share, shard_key_count           )
-    #             self.assertLess(           shard_key_count, max_share)
+        print('... Shard members:', shard_members)
+        self.assertEqual(sum(len(members) for members in shard_members.values()), len(all_instances) + 1,
+                msg='The total number of shard members is the length of all_instances, plus grace')
 
 
-    #     print('=== Check for correctness of {} key:value pairs in the store.'.format(self.key_count))
-    #     for n in range(self.key_count):
+        print('>>> Check that each node sees itself as part of the correct shard')
+        for instance in all_instances:
+            with self.subTest(msg='at instance {}'.format(instance)):
+                print('>>> Get the node-shard-id from {}'.format(instance))
+                response = requests.get('http://{}:{}/shard/node-shard-id'.format(hostname, instance.published_port))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('node-shard-id', response.json())
+                instance_shard_id = response.json()['node-shard-id']
 
-    #         key = 'key{}'.format(n)
-    #         value = 'value{}'.format(n)
-    #         instance = all_instances[(n + 2) % len(all_instances)] # different instance from the one chosen above
-    #         print('=== Check {key}:{value} at instance {instance}'.format(key=key, value=value, instance=instance))
+                print('=== Check that the {}\'s shard id {} fits with previously collected data'.format(instance, instance_shard_id))
+                self.assertIn(instance_shard_id, shard_members)
+                self.assertIn(instance.socket_address, shard_members[instance_shard_id])
 
-    #         response = requests.get('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
-    #             json={'causal-metadata':self.causal_metadata['metadata']})
-    #         print('GET {key} -> {instance} -> {code} @{m}'.format(key=key, instance=instance, m=self.causal_metadata['metadata'], code=response.status_code))
-    #         self.assertEqual(response.status_code, 200)
-    #         self.assertIn('value', response.json())
-    #         self.assertEqual(response.json()['value'], value)
-    #         self.causal_metadata['metadata'] = response.json()['causal-metadata']
+
+        print('>>> Check that shard key counts have the right total')
+        shard_key_counts = dict()
+        for shard_id, members in shard_members.items():
+
+            with self.subTest(msg='for shard {}'.format(shard_id)):
+                print('... The first instance in shard {} is {}'.format(shard_id, members[0]), end=', ')
+                (first_instance,) = [instance for instance in all_instances if instance.socket_address == members[0]]
+                print(first_instance)
+
+                print('>>> Get key-count for shard {} from {}'.format(shard_id, first_instance))
+                response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, first_instance.published_port, shard_id))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-key-count', response.json())
+                shard_key_counts[shard_id] = response.json()['shard-key-count']
+                self.assertGreater(shard_key_counts[shard_id], 1)
+
+        self.assertEqual(sum(shard_key_counts.values()), self.key_count,
+                msg='Sum of key-counts-in-shards must equal total-keys')
+
+
+        print('=== Check whether keys are distributed almost uniformly')
+
+        equal_share = self.key_count / len(shard_ids)
+        min_share = equal_share * 0.75
+        max_share = equal_share * 1.25
+
+        for shard_id, shard_key_count in shard_key_counts.items():
+            with self.subTest(msg='for shard {}'.format(shard_id)):
+                # min_share < shard_key_count < max_share
+                self.assertLess(min_share, shard_key_count           )
+                self.assertLess(           shard_key_count, max_share)
+
+
+        print('=== Check for correctness of {} key:value pairs in the store.'.format(self.key_count))
+        for n in range(self.key_count):
+
+            key = 'key{}'.format(n)
+            value = 'value{}'.format(n)
+            instance = all_instances[(n + 2) % len(all_instances)] # different instance from the one chosen above
+            print('=== Check {key}:{value} at instance {instance}'.format(key=key, value=value, instance=instance))
+
+            response = requests.get('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
+                json={'causal-metadata':self.causal_metadata['metadata']})
+            print('GET {key} -> {instance} -> {code} @{m}'.format(key=key, instance=instance, m=self.causal_metadata['metadata'], code=response.status_code))
+            self.assertEqual(response.status_code, 200)
+            self.assertIn('value', response.json())
+            self.assertEqual(response.json()['value'], value)
+            self.causal_metadata['metadata'] = response.json()['causal-metadata']
 
 
 if __name__ == '__main__':
