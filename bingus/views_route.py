@@ -1,3 +1,4 @@
+from bingus import resharding
 from flask import Flask, request, jsonify, make_response, Blueprint
 import json
 import ast
@@ -448,7 +449,9 @@ def get_key_count(ID):
 def add_member(ID):
     ID = int(ID)
     shard_ids = list(shards.keys())
+
     add_socket_address = in_json("socket-address", request.json)
+    
     if not add_socket_address:
         return make_response(dict(error="Missing <IP:PORT> header"),400)
     
@@ -462,7 +465,11 @@ def add_member(ID):
         while True:
             # Forward to every replica in the system
             try:
-                response = requests.put(f"http://{node}/assign/{ID}", json=request.json)
+                metadata = request.json
+                metadata["shards"] = shards
+                jason_friendy_shards_dictionary = to_jason_friendly_shard_dict(shards)
+                metadata["shards"] = jason_friendy_shards_dictionary
+                response = requests.put(f"http://{node}/assign/{ID}", json=metadata)
                 break
             except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
                 # WIP - crash detection might not save this from looping indefinitely. TODO: verify this
@@ -470,36 +477,80 @@ def add_member(ID):
     
     return make_response(dict(result="node added to shard"),200)
 
+
+
+# I am at my limit
+def to_jason_friendly_shard_dict(shards):
+    jason_friendy_shard_dict = dict()
+    for shard_m in shards:
+        jason_friendy_shard_dict[shard_m] = list(shards[shard_m])
+    return jason_friendy_shard_dict
+
+def to_jason_unfriendly_shard_dict(shards):
+    jason_unfriendy_shard_dict = dict()
+    for shard_m in shards:
+        jason_unfriendy_shard_dict[int(shard_m)] = set(shards[shard_m])
+    return jason_unfriendy_shard_dict
+
 @views_route.route("/assign/<ID>", methods=["PUT"])
 def assign_to_shard(ID):
+    global shards
     global shard_id
     ID = int(ID)
-    shard_ids = list(shards.keys())
-    add_socket_address = in_json("socket-address", request.json)
 
-    # WIP
-    # update shards
-    shards[shard_id].pop(add_socket_address)
-    shards[ID].add(add_socket_address)
-
-    if socket_address != add_socket_address:
-        if shard_id == ID:
-            # add new node to VC
-            local_vc.add(add_socket_address)
-        else:
-            # remove from VC if formerly in the same shard
-            if add_socket_address in local_vc:
-                local_vc.pop(add_socket_address)
-    else:
-        if shard_id != ID:
-            # update shard_id & clear _store
-            shard_id = ID
-            _store.clear()
-        else:
-            # nothing needs to be done
-            pass
+    if not shards:
+        # NEW NODE
+        shard_id = ID
+        shards = to_jason_unfriendly_shard_dict(request.json["shards"])
     
+    add_socket_address = in_json("socket-address", request.json)
+    shard_ids = list(shards.keys())
+    shards[ID].add(add_socket_address)
+    
+    if socket_address == add_socket_address:
+        info = replicate_shard_member(shards[ID])
+
+
+    # Scenarios
+    # 1) New node completely outside of the shard system (but in the views) gets added
+    # 2) Pre-existing node gets re-assigned to a new shard
+
     return make_response(dict(result="node added to shard"),200)
+
+
+def replicate_shard_member(shard_members):
+    global views
+    global local_vc
+    global _store
+    for member in shard_members:
+        while True:
+            # Add Replicas that respond
+            try:
+                # Send PUT request
+                response = requests.put(f'http://{member}/view', json={'view': socket_address, 'relay': False})
+                metadata = response.json()
+                views.add(member)
+
+                # update local clock
+                if 'replica_data' in metadata:                   
+                    # compare with padding
+                    received_vc = metadata['replica_data']['vc']
+                    # pad local clock {a: 0, b:0}
+                    local_vc.update(received_vc)
+                    # pad received clock {b: 0, a:0}
+                    received_vc.update(local_vc)
+
+                    # compare clocks(should equal length and share keys)
+                    with update_views_lock:
+                        if VectorClock(local_vc) <= VectorClock(received_vc):
+                            local_vc = received_vc
+                            _store = metadata['replica_data']['store']
+                break
+
+            # Ignore unresponsive replicas
+            except (requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
+                break
+
 
 
 # Trigger a reshard into <INTEGER> shards, maintaining fault-tolerance
@@ -516,5 +567,10 @@ def reshard():
         return make_response(dict(error="Not enough nodes to provide fault tolerance with requested shard count"), 400)
     
     # Reshard
-    pass
 
+    # TODO: move the sharding methods from replica.py into a new py file so that they can be used here
+    # call these shard functions, and forward this request to all replicas in the view
+    
+    #resharding.partition_by_hash()
+
+    return make_response(dict(result="resharded"), 200)
