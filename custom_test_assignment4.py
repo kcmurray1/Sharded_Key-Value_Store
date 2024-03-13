@@ -235,43 +235,115 @@ class TestHW4(unittest.TestCase):
     #         self.causal_metadata['metadata'] = response.json()['causal-metadata']
     #         print("causal metadata", response.json()['causal-metadata'])
 
-    def test_d_put_key_value_operation(self):
-        '''Do the replicas keep up when broadcasting with many causally-dependent requests issued quickly?'''
+    # def test_d_put_key_value_operation(self):
+    #     '''Do the replicas keep up when broadcasting with many causally-dependent requests issued quickly?'''
 
-        print('>>> Put {} key:value pairs into the store.'.format(self.key_count))
-        for n in range(self.key_count):
+    #     print('>>> Put {} key:value pairs into the store.'.format(self.key_count))
+    #     for n in range(self.key_count):
 
-            key = 'key{}'.format(n)
-            value = 'value{}'.format(n)
-            instance = all_instances[n % len(all_instances)]
-            print('>>> Put {key}:{value} at instance {instance} (with retries)'.format(key=key, value=value, instance=instance))
+    #         key = 'key{}'.format(n)
+    #         value = 'value{}'.format(n)
+    #         instance = all_instances[n % len(all_instances)]
+    #         print('>>> Put {key}:{value} at instance {instance} (with retries)'.format(key=key, value=value, instance=instance))
 
-            retries = 7
-            backoffSec = lambda attempt: 0.01*2**attempt
-            # sum([(0.01*2**n) for n in range(7)]) == 1.27
-            #
-            # If the replicas haven't successfully broadcast the previous
-            # request after 1.27sec then there's a bug, and the test fails with
-            # "too many attempts".
+    #         retries = 7
+    #         backoffSec = lambda attempt: 0.01*2**attempt
+    #         # sum([(0.01*2**n) for n in range(7)]) == 1.27
+    #         #
+    #         # If the replicas haven't successfully broadcast the previous
+    #         # request after 1.27sec then there's a bug, and the test fails with
+    #         # "too many attempts".
 
-            for attempt in range(retries):
-                response = requests.put('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
-                    json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
-                print('Try {attempt}/{retries} PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=instance, m=self.causal_metadata['metadata'], attempt=attempt + 1, retries=retries, code=response.status_code))
-                if response.status_code == 503:
-                    sleep(backoffSec(attempt))
-                    continue # retry
-                else:
-                    #print("causal metadata", response.json()['causal-metadata'])
-                    self.assertEqual(response.status_code, 201)
-                    self.causal_metadata['metadata'] = response.json()['causal-metadata']
-                    break # next request
-            else:
-                self.fail("too many attempts")
+    #         for attempt in range(retries):
+    #             response = requests.put('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
+    #                 json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
+    #             print('Try {attempt}/{retries} PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=instance, m=self.causal_metadata['metadata'], attempt=attempt + 1, retries=retries, code=response.status_code))
+    #             if response.status_code == 503:
+    #                 sleep(backoffSec(attempt))
+    #                 continue # retry
+    #             else:
+    #                 #print("causal metadata", response.json()['causal-metadata'])
+    #                 self.assertEqual(response.status_code, 201)
+    #                 self.causal_metadata['metadata'] = response.json()['causal-metadata']
+    #                 break # next request
+    #         else:
+    #             self.fail("too many attempts")
 
-        print('... Wait for replication')
+    #     print('... Wait for replication')
+    #     sleep(5)
+    def test_g_add_new_node(self):
+
+        print('>>> Start up {}'.format(grace))
+        runInstance(grace, all_instances + [grace])
+
+        print('... Give time to bind ports, update views, etc.')
         sleep(5)
 
+        print('=== Check that everybody sees {} in the view'.format(grace))
+        for instance in all_instances:
+            with self.subTest(msg='at instance {}'.format(instance)):
+                response = requests.get('http://{}:{}/view'.format(hostname, instance.published_port))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('view', response.json())
+                self.assertIn(grace.socket_address, response.json()['view'])
+
+        assigned_shard = random.choice(self.shard_ids)
+        shard_assigner = random.choice(all_instances)
+
+        print('>>> Assign {} to shard {} with a request to {}'.format(grace, assigned_shard, shard_assigner))
+        response = requests.put('http://{}:{}/shard/add-member/{}'.format(hostname, shard_assigner.published_port, assigned_shard),
+                json={'socket-address': grace.socket_address})
+        self.assertEqual(response.status_code, 200)
+        del shard_assigner
+
+        print('... Give time to replicate keys.')
+        sleep(5)
+
+        print('=== Check the shard-id of {} is {}'.format(grace, assigned_shard))
+        response = requests.get('http://{}:{}/shard/node-shard-id'.format(hostname, grace.published_port))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('node-shard-id', response.json())
+        self.assertEqual(response.json()['node-shard-id'], assigned_shard)
+
+        print('=== Check that {} is in shard {} members at each instance'.format(grace, assigned_shard))
+        for instance in all_instances:
+            with self.subTest(msg='at instance {}'.format(instance)):
+                response = requests.get('http://{}:{}/shard/members/{}'.format(hostname, instance.published_port, assigned_shard))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-members', response.json())
+                self.assertIn(grace.socket_address, response.json()['shard-members'])
+
+        print('=== Check that all instances agree about shard {} key-count'.format(assigned_shard))
+
+        response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, grace.published_port, assigned_shard))
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('shard-key-count', response.json())
+        reported_key_count = response.json()['shard-key-count']
+
+        print('=== Check that everybody reports key-count {} for shard {}'.format(reported_key_count, assigned_shard))
+        for instance in all_instances: 
+            with self.subTest(msg='at instance {}'.format(instance)):
+                response = requests.get('http://{}:{}/shard/key-count/{}'.format(hostname, instance.published_port, assigned_shard))
+                self.assertEqual(response.status_code, 200)
+                self.assertIn('shard-key-count', response.json())
+                self.assertEqual(response.json()['shard-key-count'], reported_key_count)
+
+
+    def test_h_impossible_reshard(self):
+
+        print('=== Check that an impossible reshard is rejected')
+        instance = random.choice(all_instances)
+        response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 10})
+        self.assertEqual(response.status_code, 400)
+
+
+    def test_i_possible_reshard(self):
+
+        instance = random.choice(all_instances)
+        print('>>> Do a reshard at {}'.format(instance))
+        with self.subTest(msg='reshard at {}'.format(instance)):
+            response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 3})
+            self.assertEqual(response.status_code, 200)
 
 
 

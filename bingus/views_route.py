@@ -571,11 +571,16 @@ def reshard():
     if math.floor(len(views)/new_shard_count) < MIN_NODES:
         return make_response(dict(error="Not enough nodes to provide fault tolerance with requested shard count"), 400)
     
-    # relay the reshard request to all views(replicas)
-    if "relay" not in request.json:
-        relay_req = request
-        relay_req.json["relay"] = "bingus"
-        relay_reshard(relay_req)
+    # two cases
+    #(1)Reshard with changed N
+    reshard = resharding.partition_by_hash(views, new_shard_count)
+    print(reshard, flush=True)
+    # #(2) Resarch with same N
+    # # relay the reshard request to all views(replicas)
+    # if "relay" not in request.json:
+    #     relay_req = request
+    #     relay_req.json["relay"] = "bingus"
+    #     relay_reshard(relay_req)
 
     return make_response(dict(result="resharded"), 200)
 

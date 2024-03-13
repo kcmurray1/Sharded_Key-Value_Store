@@ -3,7 +3,7 @@ import hashlib
 
 HASH_OUTPUT_SPACE = 128
 GLOBAL_MIN = 2
-
+views = { '10.10.0.6:8090', '10.10.0.4:8090', '10.10.0.7:8090', '10.10.0.2:8090', '10.10.0.3:8090', '10.10.0.5:8090'}
 def balance_shards(shards, MIN_NODES_PER_SHARD):
     """
     Returns:
@@ -26,16 +26,21 @@ def balance_shards(shards, MIN_NODES_PER_SHARD):
             if len(nodes_j) > MIN_NODES_PER_SHARD and len(nodes) < MIN_NODES_PER_SHARD:
                 # Sort alphabetically and redistribute to shard with < 2 nodes
                 nodes_j = list(sorted(nodes_j))
+                print("large:", nodes_j, " small: ", nodes)
                 # Move node from large partition into smaller partition
                 node = nodes_j.pop()
                 # Update the initial_distribution of shards
                 shards[j] = set(nodes_j)
                 nodes.add(node)
+                print("AFTER: large:", nodes_j, " small: ", nodes)
+                fault_tolerant[j] = set(nodes_j)
         # Was unable to reach fault tolerance after redistribution
         if len(nodes) < MIN_NODES_PER_SHARD:
             return None
         # Add parition with at least min nodes needed
-        fault_tolerant[cur_shard_id] = nodes
+        if cur_shard_id not in fault_tolerant:
+            fault_tolerant[cur_shard_id] = nodes
+        
     return fault_tolerant
 
 def partition_by_hash(replicas, shard_count):
@@ -52,7 +57,11 @@ def partition_by_hash(replicas, shard_count):
         initial_distribution[shard_id].add(replica)
         # calculate position on imaginary ring
         ring_pos[hash_as_decimal % HASH_OUTPUT_SPACE] = replica 
-    
+    print("ended up with", initial_distribution, flush=True)
     # each partition must have at least 2 nodes
     initial_distribution = balance_shards(initial_distribution, math.floor(len(replicas)/shard_count))
     return (initial_distribution, ring_pos)
+
+if __name__=="__main__":
+    res, idk = partition_by_hash(views, 3)
+    print(res)

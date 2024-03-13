@@ -3,7 +3,7 @@ to assign location on imaginary ring"""
 
 import hashlib
 import math
-NUM_SHARDS = 2
+NUM_SHARDS = 3
 HASH_OUTPUT_SPACE = 128
  
 replicas = {"alice" : "10.10.0.2", "bob" : "10.10.0.3", "carol": "10.10.0.4",
