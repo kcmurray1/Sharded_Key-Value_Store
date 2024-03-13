@@ -497,6 +497,7 @@ def to_jason_unfriendly_shard_dict(shards):
 def assign_to_shard(ID):
     global shards
     global shard_id
+    global local_vc
     ID = int(ID)
 
     if not shards:
@@ -511,6 +512,7 @@ def assign_to_shard(ID):
     if socket_address == add_socket_address:
         info = replicate_shard_member(shards[ID])
 
+    local_vc[ID] = 0 # WIP
 
     # Scenarios
     # 1) New node completely outside of the shard system (but in the views) gets added
@@ -562,6 +564,8 @@ def reshard():
     global shards
     global ring_positions
     global shard_count
+    global _store
+    global local_vc
     # validate JSON body
     new_shard_count = in_json("shard-count", request.json) 
     if not new_shard_count:
@@ -573,16 +577,33 @@ def reshard():
     
     # two cases
     #(1)Reshard with changed N
-    reshard = resharding.partition_by_hash(views, new_shard_count)
+    reshard, reshard_ring_positions = resharding.partition_by_hash(views, new_shard_count)
     print(reshard, flush=True)
     # #(2) Resarch with same N
-    # # relay the reshard request to all views(replicas)
-    # if "relay" not in request.json:
-    #     relay_req = request
-    #     relay_req.json["relay"] = "bingus"
-    #     relay_reshard(relay_req)
+    # relay the reshard request to all views(replicas)
+    if "relay" not in request.json:
+        relay_req = request
+        relay_req.json["relay"] = "bingus"
+        relay_reshard(relay_req)
+
+    shards = reshard
+    ring_positions = reshard_ring_positions
+    shard_id = find_replica_id(reshard, socket_address)
+    shard_count = new_shard_count
+
+    # TODO: No GETs or PUTs or DELETE happen on the kvs during resharding, so clean slate?
+    local_vc = dict()
+    for member in shards[shard_id]:
+        local_vc[member] = 0
 
     return make_response(dict(result="resharded"), 200)
+
+
+def find_replica_id(shards, replica_to_find):
+    for id in shards:
+        if replica_to_find in shards[id]:
+            return id
+
 
 # Relay/rebroadcast a request to all replicas on the /reshard endpoint
 def relay_reshard(relayed_request):
