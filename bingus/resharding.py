@@ -3,6 +3,7 @@ import hashlib
 
 HASH_OUTPUT_SPACE = 128
 GLOBAL_MIN = 2
+
 def balance_shards(shards, MIN_NODES_PER_SHARD):
     """
     Returns:

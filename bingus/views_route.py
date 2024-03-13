@@ -209,7 +209,7 @@ def get_metadata(req):
 def adjust_mapping(key):
     global local_vc
     global _store
-    print("got request", request.json, flush=True)
+    #print("got request", request.json, flush=True)
     
 
 
@@ -421,6 +421,7 @@ def get_members(ID):
     if ID not in shards:
         return make_response({"error": "Shard ID does not exist"}, 404) 
     else:
+        print(f"SHARDS AT /SHARD-MEMBERS: {shards}", flush=True)
         return make_response({"shard-members": list(shards[ID])}, 200)
 
 # Look up the number of kv pairs stored in the specified shard
@@ -557,6 +558,10 @@ def replicate_shard_member(shard_members):
 # Given JSON body {"shard-count": <INTEGER>}
 @views_route.route("/shard/reshard", methods=["PUT"])
 def reshard():
+    global shard_id
+    global shards
+    global ring_positions
+    global shard_count
     # validate JSON body
     new_shard_count = in_json("shard-count", request.json) 
     if not new_shard_count:
@@ -566,11 +571,33 @@ def reshard():
     if math.floor(len(views)/new_shard_count) < MIN_NODES:
         return make_response(dict(error="Not enough nodes to provide fault tolerance with requested shard count"), 400)
     
-    # Reshard
-
-    # TODO: move the sharding methods from replica.py into a new py file so that they can be used here
-    # call these shard functions, and forward this request to all replicas in the view
-    
-    #resharding.partition_by_hash()
+    # relay the reshard request to all views(replicas)
+    if "relay" not in request.json:
+        relay_req = request
+        relay_req.json["relay"] = "bingus"
+        relay_reshard(relay_req)
 
     return make_response(dict(result="resharded"), 200)
+
+# Relay/rebroadcast a request to all replicas on the /reshard endpoint
+def relay_reshard(relayed_request):
+    for view in views:
+        print(f"RELAY RESHARD TO {view}", flush=True)
+        if view != socket_address:
+            buffer_send_reshard(relayed_request, view)
+
+
+def buffer_send_reshard(req : Flask.request_class, view : str):
+    """Keep sending updated view information until received and processed (eventual consistency)"""
+    global views
+    metadata = req.json
+    metadata["relay"] = None
+    while True:
+        try:
+            print(f"BUFFER SEND RESHARD TO {view}", flush=True)
+            response = requests.request(f"{req.method}", f"http://{view}/reshard", json=metadata)
+            break
+        except requests.Timeout:
+            continue
+        except (requests.ConnectionError, requests.RequestException):
+            continue
