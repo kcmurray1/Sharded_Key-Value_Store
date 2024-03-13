@@ -493,6 +493,7 @@ def to_jason_unfriendly_shard_dict(shards):
         jason_unfriendy_shard_dict[int(shard_m)] = set(shards[shard_m])
     return jason_unfriendy_shard_dict
 
+# New node completely outside of the shard system (but in the views) gets added
 @views_route.route("/assign/<ID>", methods=["PUT"])
 def assign_to_shard(ID):
     global shards
@@ -512,11 +513,8 @@ def assign_to_shard(ID):
     if socket_address == add_socket_address:
         info = replicate_shard_member(shards[ID])
 
-    local_vc[ID] = 0 # WIP
+    local_vc[ID] = 0 # TODO: WIP - also have to copy the _store over too, should we bring back the dedicated endpoint to get an entire _store?
 
-    # Scenarios
-    # 1) New node completely outside of the shard system (but in the views) gets added
-    # 2) Pre-existing node gets re-assigned to a new shard
 
     return make_response(dict(result="node added to shard"),200)
 
@@ -595,6 +593,8 @@ def reshard():
     local_vc = dict()
     for member in shards[shard_id]:
         local_vc[member] = 0
+    # TODO: how to get key-value pairs from the old shards?
+
 
     return make_response(dict(result="resharded"), 200)
 
