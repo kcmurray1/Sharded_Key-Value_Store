@@ -12,6 +12,7 @@ import math
 
 views_route = Blueprint("views", __name__)
 _store = dict()
+_substore = dict() # contains the keys that hash to THIS NODE SPECIFICALLY
 MIN_KEY_LENGTH = 50
 
 shard_count = 0 # current # of shards in the system
@@ -209,6 +210,7 @@ def get_metadata(req):
 def adjust_mapping(key):
     global local_vc
     global _store
+    global _substore
     #print("got request", request.json, flush=True)
     
 
@@ -221,6 +223,10 @@ def adjust_mapping(key):
     sender = None
     sender_vc = None
     sender_vc_all = None
+    update_substore_flag = False
+
+    print(f"BEGIN /KVS REQ: len(SUBSTORE) = {len(_substore)}, len(store) = {len(_store)}", flush=True)
+
     # Perform logic if causal-metadata is present(not None)
     if request.json["causal-metadata"]:
         sender, sender_vc, sender_vc_all = get_metadata(request)
@@ -229,6 +235,8 @@ def adjust_mapping(key):
             addr_to_send= consistent_hash_key(key)
             if addr_to_send != socket_address:
                 return forward(request, addr_to_send,key)
+            else:
+                update_substore_flag = True
         print("received sender vc", sender_vc, "with stuff :", sender_vc_all, flush=True)
         # Check for dependencies
         dependency_result = dependency_check(sender, sender_vc)
@@ -236,6 +244,8 @@ def adjust_mapping(key):
         if dependency_result:
             return make_response({"error": "Causal dependencies not satisfied; try again later", "get-vc" : get_local_causal_metadata()["vc"]}, 503)
        
+    print(f"UPDATE SUBSTORE FLAG: {update_substore_flag}", flush=True)
+    
     # PUT request
     if request.method == "PUT":
         # Verify that request contains valid json and "value" as a key
@@ -260,7 +270,11 @@ def adjust_mapping(key):
             res = make_response({"result": "replaced", "causal-metadata": get_local_causal_metadata(sender, sender_vc_all)}, 200)
         # Update store
         _store[key] = value
-        
+
+        # Update substore
+        _substore[key] = value
+        print(f"AFTER /KVS PUT REQ: len(SUBSTORE) = {len(_substore)}, len(store) = {len(_store)}", flush=True)
+
         return res
     
     # Cannot process GET or DELETE requests if key does not exist in _store
@@ -275,6 +289,11 @@ def adjust_mapping(key):
     if request.method == "DELETE":
         # Remove key from dictionary
         _store.pop(key, None)
+
+        # Remove key from substore if applicable
+        if update_substore_flag:
+            _substore.pop(key, None)
+        print(f"AFTER /KVS DELETE REQ: len(SUBSTORE) = {len(_substore)}, len(store) = {len(_store)}", flush=True)
 
         # Update local VC if request contains a VC
         if sender_vc:
@@ -640,6 +659,7 @@ def update_node(old_members, new_members):
     # OLD_MEMBERS
     # remove and store keys from old_members' _store that hash to this node
     for member in old_members:
+        # get the _store of this member
         pass
     # NEW_MEMBERS
     # add the keys from previous step to new members' _store

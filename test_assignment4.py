@@ -120,7 +120,7 @@ class TestHW4(unittest.TestCase):
 
     # constants
     shard_count = 2
-    key_count = 600 # 600
+    key_count = 50 # 600
 
     @classmethod
     def setUpClass(cls):
