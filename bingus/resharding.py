@@ -25,14 +25,12 @@ def balance_shards(shards, MIN_NODES_PER_SHARD):
             # try to find shard that contains > 2 nodes 
             if len(nodes_j) > MIN_NODES_PER_SHARD and len(nodes) < MIN_NODES_PER_SHARD:
                 # Sort alphabetically and redistribute to shard with < 2 nodes
-                nodes_j = list(sorted(nodes_j))
-                print("large:", nodes_j, " small: ", nodes)
+                nodes_j = list(sorted(nodes_j))            
                 # Move node from large partition into smaller partition
                 node = nodes_j.pop()
                 # Update the initial_distribution of shards
                 shards[j] = set(nodes_j)
                 nodes.add(node)
-                print("AFTER: large:", nodes_j, " small: ", nodes)
                 fault_tolerant[j] = set(nodes_j)
         # Was unable to reach fault tolerance after redistribution
         if len(nodes) < MIN_NODES_PER_SHARD:
@@ -57,7 +55,6 @@ def partition_by_hash(replicas, shard_count):
         initial_distribution[shard_id].add(replica)
         # calculate position on imaginary ring
         ring_pos[hash_as_decimal % HASH_OUTPUT_SPACE] = replica 
-    print("ended up with", initial_distribution, flush=True)
     # each partition must have at least 2 nodes
     initial_distribution = balance_shards(initial_distribution, math.floor(len(replicas)/shard_count))
     return (initial_distribution, ring_pos)

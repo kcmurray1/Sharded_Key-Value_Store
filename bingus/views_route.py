@@ -37,7 +37,7 @@ def print_replica():
     print(f"_store: {_store}, views: {views}, VC: {local_vc}", flush=True)
 
 def get_local_causal_metadata(sender=True, sender_vc_all=None):
-    #print("sender_vc_all", sender_vc_all, type(shard_id),  flush=True)
+    # print("sender_vc_all", sender_vc_all, type(shard_id),  flush=True)
     if not sender:
         if not sender_vc_all:
             sender_vc_all = dict()
@@ -48,7 +48,7 @@ def get_local_causal_metadata(sender=True, sender_vc_all=None):
     return {"vc":local_vc}
 
 def forward(req, addr, key):
-    print(f"forward to {addr}, with key {key}", flush=True)
+    print(f"forward to {addr}, with key {key} and json: {req.json}", flush=True)
     response = requests.request(req.method, f"http://{addr}/kvs/{key}",json=req.json)
     print(f"forward response, {response.json()}", flush=True)
     return make_response(response.json(), response.status_code)
@@ -213,7 +213,7 @@ def adjust_mapping(key):
     
 
 
-    #print("receiving req with meta: ", request.json, flush=True)
+    print("receiving req with meta: ", request.json, " With local vc: ", local_vc, flush=True)
     # key length must be less than 50 characters
     if len(key) > MIN_KEY_LENGTH:
         return make_response(jsonify(error="Key is too long"), 400)
@@ -299,6 +299,7 @@ def handle_views():
         new_view = in_json("view", request.json)
         if not new_view:
             return make_response(jsonify(error="bad request"), 400)
+        # print(f"handle_views req: {request.json}, local_causal: {get_local_causal_metadata()} with store {_store}", flush=True)
         # already part of the view
         if new_view in views:
            return make_response(jsonify(result="already present", replica_data=dict(vc=get_local_causal_metadata()["vc"], store=_store)), 200)
@@ -513,7 +514,7 @@ def assign_to_shard(ID):
     if socket_address == add_socket_address:
         info = replicate_shard_member(shards[ID])
 
-    local_vc[ID] = 0 # TODO: WIP - also have to copy the _store over too, should we bring back the dedicated endpoint to get an entire _store?
+    #local_vc[ID] = 0 # TODO: WIP - also have to copy the _store over too, should we bring back the dedicated endpoint to get an entire _store?
 
 
     return make_response(dict(result="node added to shard"),200)
@@ -588,7 +589,7 @@ def reshard():
     ring_positions = reshard_ring_positions
     shard_id = find_replica_id(reshard, socket_address)
     shard_count = new_shard_count
-
+    print(f"AFTER reshard: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}", flush=True)
     # TODO: No GETs or PUTs or DELETE happen on the kvs during resharding, so clean slate?
     local_vc = dict()
     for member in shards[shard_id]:
