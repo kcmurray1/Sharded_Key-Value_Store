@@ -558,6 +558,7 @@ def replicate_shard_member(shard_members):
 # Given JSON body {"shard-count": <INTEGER>}
 @views_route.route("/shard/reshard", methods=["PUT"])
 def reshard():
+    print("received reshard req: ", request.json, flush=True)
     global shard_id
     global shards
     global ring_positions
@@ -576,37 +577,28 @@ def reshard():
     # two cases
     #(1)Reshard with changed N
     reshard, reshard_ring_positions = resharding.partition_by_hash(views, new_shard_count)
-    print(f"NEWLY RESHARDED SHARDS: {reshard}", flush=True)
+    # print(f"NEWLY RESHARDED SHARDS: {reshard}", flush=True)
+
+    # assign possible new id
     new_shard_id = find_replica_id(reshard, socket_address)
-    # #(2) Resarch with same N
     # relay the reshard request to all views(replicas)
     if "relay" not in request.json:
         relay_req = request
         relay_req.json["relay"] = "bingus"
         relay_reshard(relay_req)
+    print(f"new_id {new_shard_id}, old_id {shard_id}", flush=True)
+    # update this node
+    update_node(shards[shard_id], reshard[new_shard_id])
+       
 
-
-    # TODO: No GETs or PUTs or DELETE happen on the kvs during resharding, so clean slate?
-    local_vc = dict()
-    for member in reshard[new_shard_id]:
-        local_vc[member] = 0
-
-    if shard_id != new_shard_id:
-        # Node is assigned to a new shard
-        
-        # TODO: get store keys from an old member / new member w/ the store copied over
-        # _store = dict()
-        shard_id = new_shard_id
     
+    # assign vars
     shards = reshard
     ring_positions = reshard_ring_positions
     shard_count = new_shard_count
 
-    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}", flush=True)
-    
-    # TODO: how to get key-value pairs from the old shards?
-
-
+    # Reshard complete
+    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}, _store {_store}", flush=True)
     return make_response(dict(result="resharded"), 200)
 
 
@@ -632,9 +624,28 @@ def buffer_send_reshard(req : Flask.request_class, view : str):
     while True:
         try:
             print(f"BUFFER SEND RESHARD TO {view}", flush=True)
-            response = requests.request(f"{req.method}", f"http://{view}/reshard", json=metadata)
+            response = requests.request(f"{req.method}", f"http://{view}/shard/reshard", json=metadata)
             break
         except requests.Timeout:
             continue
         except (requests.ConnectionError, requests.RequestException):
             continue
+
+def update_node(old_members, new_members):
+    """Update node to match information in new partition"""
+    global local_vc
+    global _store
+    print(f"old members: {old_members}, new members: {new_members}", flush=True)
+    # NOTE: new_shard_id and old_shard_id may not be needed
+    # OLD_MEMBERS
+    # remove and store keys from old_members' _store that hash to this node
+    for member in old_members:
+        pass
+    # NEW_MEMBERS
+    # add the keys from previous step to new members' _store
+    # change vc_clock
+
+    local_vc = dict()
+  
+    for member in new_members:
+        local_vc[member] = 0
