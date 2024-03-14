@@ -509,13 +509,11 @@ def assign_to_shard(ID):
         shards = to_jason_unfriendly_shard_dict(request.json["shards"])
     
     add_socket_address = in_json("socket-address", request.json)
-    shard_ids = list(shards.keys())
     shards[ID].add(add_socket_address)
     
     if socket_address == add_socket_address:
-        info = replicate_shard_member(shards[ID])
-
-    local_vc[add_socket_address] = 0 # TODO: WIP - also have to copy the _store over too, should we bring back the dedicated endpoint to get an entire _store?
+        # This is the newly-added node, so replicate store & vc
+        replicate_shard_member(shards[ID])
 
     print(f"SHARDS AFTER ADDING NEW REPLICA {shards}: ", flush=True)
     return make_response(dict(result="node added to shard"),200)
