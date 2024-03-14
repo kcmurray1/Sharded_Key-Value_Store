@@ -213,7 +213,7 @@ def adjust_mapping(key):
     
 
 
-    print("receiving req with meta: ", request.json, " With local vc: ", local_vc, flush=True)
+    print(f"receiving req with meta: {request.json} with local vc: {local_vc}", flush=True)
     # key length must be less than 50 characters
     if len(key) > MIN_KEY_LENGTH:
         return make_response(jsonify(error="Key is too long"), 400)
@@ -299,7 +299,6 @@ def handle_views():
         new_view = in_json("view", request.json)
         if not new_view:
             return make_response(jsonify(error="bad request"), 400)
-        # print(f"handle_views req: {request.json}, local_causal: {get_local_causal_metadata()} with store {_store}", flush=True)
         # already part of the view
         if new_view in views:
            return make_response(jsonify(result="already present", replica_data=dict(vc=get_local_causal_metadata()["vc"], store=_store)), 200)
@@ -502,6 +501,8 @@ def assign_to_shard(ID):
     global local_vc
     ID = int(ID)
 
+    print(f"SHARDS BEFORE ADDING THE NEW MEMBER: {shards}", flush=True)
+
     if not shards:
         # NEW NODE
         shard_id = ID
@@ -514,9 +515,9 @@ def assign_to_shard(ID):
     if socket_address == add_socket_address:
         info = replicate_shard_member(shards[ID])
 
-    #local_vc[ID] = 0 # TODO: WIP - also have to copy the _store over too, should we bring back the dedicated endpoint to get an entire _store?
+    local_vc[add_socket_address] = 0 # TODO: WIP - also have to copy the _store over too, should we bring back the dedicated endpoint to get an entire _store?
 
-
+    print(f"SHARDS AFTER ADDING NEW REPLICA {shards}: ", flush=True)
     return make_response(dict(result="node added to shard"),200)
 
 
@@ -577,7 +578,8 @@ def reshard():
     # two cases
     #(1)Reshard with changed N
     reshard, reshard_ring_positions = resharding.partition_by_hash(views, new_shard_count)
-    print(reshard, flush=True)
+    print(f"NEWLY RESHARDED SHARDS: {reshard}", flush=True)
+    new_shard_id = find_replica_id(reshard, socket_address)
     # #(2) Resarch with same N
     # relay the reshard request to all views(replicas)
     if "relay" not in request.json:
@@ -585,15 +587,25 @@ def reshard():
         relay_req.json["relay"] = "bingus"
         relay_reshard(relay_req)
 
-    shards = reshard
-    ring_positions = reshard_ring_positions
-    shard_id = find_replica_id(reshard, socket_address)
-    shard_count = new_shard_count
-    print(f"AFTER reshard: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}", flush=True)
+
     # TODO: No GETs or PUTs or DELETE happen on the kvs during resharding, so clean slate?
     local_vc = dict()
-    for member in shards[shard_id]:
+    for member in reshard[new_shard_id]:
         local_vc[member] = 0
+
+    if shard_id != new_shard_id:
+        # Node is assigned to a new shard
+        
+        # TODO: get store keys from an old member / new member w/ the store copied over
+        # _store = dict()
+        shard_id = new_shard_id
+    
+    shards = reshard
+    ring_positions = reshard_ring_positions
+    shard_count = new_shard_count
+
+    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}", flush=True)
+    
     # TODO: how to get key-value pairs from the old shards?
 
 

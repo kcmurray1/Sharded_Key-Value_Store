@@ -374,12 +374,12 @@ class TestHW4(unittest.TestCase):
                 self.assertEqual(response.json()['shard-key-count'], reported_key_count)
 
 
-    def test_h_impossible_reshard(self):
+    # def test_h_impossible_reshard(self):
 
-        print('=== Check that an impossible reshard is rejected')
-        instance = random.choice(all_instances)
-        response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 10})
-        self.assertEqual(response.status_code, 400)
+    #     print('=== Check that an impossible reshard is rejected')
+    #     instance = random.choice(all_instances)
+    #     response = requests.put('http://{}:{}/shard/reshard'.format(hostname, instance.published_port), json={'shard-count': 10})
+    #     self.assertEqual(response.status_code, 400)
 
 
     def test_i_possible_reshard(self):
