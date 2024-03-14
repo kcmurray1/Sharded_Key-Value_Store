@@ -120,7 +120,7 @@ class TestHW4(unittest.TestCase):
 
     # constants
     shard_count = 2
-    key_count = 600
+    key_count = 100
 
     @classmethod
     def setUpClass(cls):
@@ -235,42 +235,43 @@ class TestHW4(unittest.TestCase):
     #         self.causal_metadata['metadata'] = response.json()['causal-metadata']
     #         print("causal metadata", response.json()['causal-metadata'])
 
-    # def test_d_put_key_value_operation(self):
-    #     '''Do the replicas keep up when broadcasting with many causally-dependent requests issued quickly?'''
+    def test_d_put_key_value_operation(self):
+        '''Do the replicas keep up when broadcasting with many causally-dependent requests issued quickly?'''
 
-    #     print('>>> Put {} key:value pairs into the store.'.format(self.key_count))
-    #     for n in range(self.key_count):
+        print('>>> Put {} key:value pairs into the store.'.format(self.key_count))
+        for n in range(self.key_count):
 
-    #         key = 'key{}'.format(n)
-    #         value = 'value{}'.format(n)
-    #         instance = all_instances[n % len(all_instances)]
-    #         print('>>> Put {key}:{value} at instance {instance} (with retries)'.format(key=key, value=value, instance=instance))
+            key = 'key{}'.format(n)
+            value = 'value{}'.format(n)
+            instance = all_instances[n % len(all_instances)]
+            print('>>> Put {key}:{value} at instance {instance} (with retries)'.format(key=key, value=value, instance=instance))
 
-    #         retries = 7
-    #         backoffSec = lambda attempt: 0.01*2**attempt
-    #         # sum([(0.01*2**n) for n in range(7)]) == 1.27
-    #         #
-    #         # If the replicas haven't successfully broadcast the previous
-    #         # request after 1.27sec then there's a bug, and the test fails with
-    #         # "too many attempts".
+            retries = 7
+            backoffSec = lambda attempt: 0.01*2**attempt
+            # sum([(0.01*2**n) for n in range(7)]) == 1.27
+            #
+            # If the replicas haven't successfully broadcast the previous
+            # request after 1.27sec then there's a bug, and the test fails with
+            # "too many attempts".
 
-    #         for attempt in range(retries):
-    #             response = requests.put('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
-    #                 json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
-    #             print('Try {attempt}/{retries} PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=instance, m=self.causal_metadata['metadata'], attempt=attempt + 1, retries=retries, code=response.status_code))
-    #             if response.status_code == 503:
-    #                 sleep(backoffSec(attempt))
-    #                 continue # retry
-    #             else:
-    #                 #print("causal metadata", response.json()['causal-metadata'])
-    #                 self.assertEqual(response.status_code, 201)
-    #                 self.causal_metadata['metadata'] = response.json()['causal-metadata']
-    #                 break # next request
-    #         else:
-    #             self.fail("too many attempts")
+            for attempt in range(retries):
+                response = requests.put('http://{}:{}/kvs/{}'.format(hostname, instance.published_port, key),
+                    json={'value':value, 'causal-metadata':self.causal_metadata['metadata']})
+                print('Try {attempt}/{retries} PUT {key}:{value} -> {instance} -> {code} @{m}'.format(key=key, value=value, instance=instance, m=self.causal_metadata['metadata'], attempt=attempt + 1, retries=retries, code=response.status_code))
+                if response.status_code == 503:
+                    sleep(backoffSec(attempt))
+                    continue # retry
+                else:
+                    #print("causal metadata", response.json()['causal-metadata'])
+                    self.assertEqual(response.status_code, 201)
+                    self.causal_metadata['metadata'] = response.json()['causal-metadata']
+                    break # next request
+            else:
+                self.fail("too many attempts")
 
-    #     print('... Wait for replication')
-    #     sleep(5)
+        print('... Wait for replication')
+        sleep(5)
+    
     def test_g_add_new_node(self):
 
         print('>>> Start up {}'.format(grace))

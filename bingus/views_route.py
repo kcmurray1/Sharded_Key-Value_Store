@@ -30,6 +30,7 @@ request_lock = Lock()
 shard_id = None # id of the shard this node belongs to
 shards = dict() # {shard_id: shard_members}
 ring_positions = dict()
+_substore = dict()
 # --------------------------------------------------------------------------------------------------------------
 # Functions
 # --------------------------------------------------------------------------------------------------------------
@@ -213,7 +214,7 @@ def adjust_mapping(key):
     
 
 
-    print(f"receiving req with meta: {request.json} with local vc: {local_vc}", flush=True)
+    print(f"receiving req with meta: {request.json} with local vc: {local_vc} _store: {len(_store)} _substore {len(_substore)}", flush=True)
     # key length must be less than 50 characters
     if len(key) > MIN_KEY_LENGTH:
         return make_response(jsonify(error="Key is too long"), 400)
@@ -221,21 +222,22 @@ def adjust_mapping(key):
     sender = None
     sender_vc = None
     sender_vc_all = None
+    addr_to_send = None
     # Perform logic if causal-metadata is present(not None)
     if request.json["causal-metadata"]:
         sender, sender_vc, sender_vc_all = get_metadata(request)
-        if not sender:
-            # hash value to determine whether to forward or proceed locally
-            addr_to_send= consistent_hash_key(key)
-            if addr_to_send != socket_address:
+         # hash value to determine whether to forward or proceed locally
+        addr_to_send = consistent_hash_key(key)
+        # request is from client and key is hashed to different replica
+        if not sender and addr_to_send != socket_address:
                 return forward(request, addr_to_send,key)
-        print("received sender vc", sender_vc, "with stuff :", sender_vc_all, flush=True)
+               
+        #print("received sender vc", sender_vc, "with stuff :", sender_vc_all, flush=True)
         # Check for dependencies
         dependency_result = dependency_check(sender, sender_vc)
         # There is a dependency return 503
         if dependency_result:
             return make_response({"error": "Causal dependencies not satisfied; try again later", "get-vc" : get_local_causal_metadata()["vc"]}, 503)
-       
     # PUT request
     if request.method == "PUT":
         # Verify that request contains valid json and "value" as a key
@@ -260,6 +262,9 @@ def adjust_mapping(key):
             res = make_response({"result": "replaced", "causal-metadata": get_local_causal_metadata(sender, sender_vc_all)}, 200)
         # Update store
         _store[key] = value
+        # possibly update _substore
+        if addr_to_send == socket_address:
+            _substore[key] = value
         
         return res
     
@@ -275,7 +280,9 @@ def adjust_mapping(key):
     if request.method == "DELETE":
         # Remove key from dictionary
         _store.pop(key, None)
-
+        # possibly remove key from _substore
+        if addr_to_send == socket_address:
+            _substore.pop(key, None)
         # Update local VC if request contains a VC
         if sender_vc:
             local_vc = max_of(local_vc, sender_vc)
@@ -598,7 +605,7 @@ def reshard():
     shard_count = new_shard_count
 
     # Reshard complete
-    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}, _store {_store}", flush=True)
+    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}", flush=True)
     return make_response(dict(result="resharded"), 200)
 
 
