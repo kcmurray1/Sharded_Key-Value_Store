@@ -57,8 +57,7 @@ def notify_replicas(view_points, socket_address):
           f"ring_positions {views_route.ring_positions}", flush=True)
     # Start Pulse Sender Thread
     h = threading.Timer(TIME_TO_BOOT * 2, pulse_starter)
-    #h.start()
-    # TODO: uncomment this!!!!!!
+    h.start()
 
 # Build then run Replica
 def startup():
@@ -81,13 +80,11 @@ def startup():
             partitions, ring_pos = resharding.partition_by_hash(starting_views, shard_count)
             print("GENERATED partitions: ", partitions)
             views_route.ring_positions = ring_pos
-            # set local shard id
+            # set shard id
             views_route.shard_id = find_replica_id(partitions, views_route.socket_address)
-
             # set shards
             views_route.shards = partitions
     except IndexError:
-        # TODO: anything need to be added here?
         pass
     starting_views.remove(views_route.socket_address)
     

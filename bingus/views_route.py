@@ -31,6 +31,7 @@ shard_id = None # id of the shard this node belongs to
 shards = dict() # {shard_id: shard_members}
 ring_positions = dict()
 _substore = dict()
+
 # --------------------------------------------------------------------------------------------------------------
 # Functions
 # --------------------------------------------------------------------------------------------------------------
@@ -38,20 +39,16 @@ def print_replica():
     print(f"_store: {_store}, views: {views}, VC: {local_vc}", flush=True)
 
 def get_local_causal_metadata(sender=True, sender_vc_all=None):
-    # print("sender_vc_all", sender_vc_all, type(shard_id),  flush=True)
     if not sender:
         if not sender_vc_all:
             sender_vc_all = dict()
         sender_vc_all[str(shard_id)] = local_vc
         return {"vc" : sender_vc_all} 
-        #sreturn {"vc" : {shard_id : local_vc}}
 
     return {"vc":local_vc}
 
 def forward(req, addr, key):
-    print(f"forward to {addr}, with key {key} and json: {req.json}", flush=True)
     response = requests.request(req.method, f"http://{addr}/kvs/{key}",json=req.json)
-    print(f"forward response, {response.json()}", flush=True)
     return make_response(response.json(), response.status_code)
 
 def consistent_hash_key(key):
@@ -71,7 +68,6 @@ def consistent_hash_key(key):
     
     return ring_positions[key_ring_pos]
 
-
 def buffer_send_kvs(req, key, addr):
     """Send update local vector clock along with request to other replicas"""
     while True:
@@ -79,7 +75,6 @@ def buffer_send_kvs(req, key, addr):
             metadata = req.json
             metadata["causal-metadata"] = dict(sender=socket_address, vc=local_vc)
             response = requests.request(f"{req.method}", f"http://{addr}/kvs/{key}", json=metadata, timeout=10)
-            print("buffer_send_kvs", response.json(), flush=True)
             if 'get-vc' in response.json() and VectorClock(response.json()['get-vc']) == VectorClock(local_vc):
                 break
             if response.status_code != 503:
@@ -101,14 +96,12 @@ def buffer_send_view(req : Flask.request_class, view : str):
     while True:
         try:
             response = requests.request(f"{req.method}", f"http://{view}/view", json=metadata)
-            
             if response.status_code != 503:
                 return
         except requests.Timeout:
             continue
         except (requests.ConnectionError, requests.RequestException):
             continue
-
 
 def max_of(first : dict, second: dict):
     """Return dictionary containing max of two dictionaries"""
@@ -194,14 +187,15 @@ def get_metadata(req):
     sender = None
     meta = req.json["causal-metadata"]
     sender_vc = meta['vc']
+
     if "sender" in meta:
         sender = meta["sender"]
         return (sender, sender_vc,None)
-    #print("metadata: ", sender_vc, type(shard_id), flush=True)
+
     if str(shard_id) not in sender_vc:
         sender_vc[str(shard_id)] = local_vc
     return (sender, sender_vc[str(shard_id)], sender_vc)
-    
+
 # --------------------------------------------------------------------------------------------------------------
 # Key Value Store endpoint
 # --------------------------------------------------------------------------------------------------------------
@@ -209,11 +203,6 @@ def get_metadata(req):
 def adjust_mapping(key):
     global local_vc
     global _store
-    #print("got request", request.json, flush=True)
-    
-
-
-    print(f"receiving req with meta: {request.json} with local vc: {local_vc} _store: {len(_store)} _substore {len(_substore)}", flush=True)
     # key length must be less than 50 characters
     if len(key) > MIN_KEY_LENGTH:
         return make_response(jsonify(error="Key is too long"), 400)
@@ -225,15 +214,12 @@ def adjust_mapping(key):
     # Perform logic if causal-metadata is present(not None)
     if request.json["causal-metadata"]:
         sender, sender_vc, sender_vc_all = get_metadata(request)
-
-        print(f"KVS REQ: sender_vc: {sender_vc} sender_vc_all {sender_vc_all}", flush=True)
-         # hash value to determine whether to forward or proceed locally
+        # hash value to determine whether to forward or proceed locally
         addr_to_send = consistent_hash_key(key)
         # request is from client and key is hashed to different replica
         if not sender and addr_to_send != socket_address:
                 return forward(request, addr_to_send,key)
-               
-        #print("received sender vc", sender_vc, "with stuff :", sender_vc_all, flush=True)
+   
         # Check for dependencies
         dependency_result = dependency_check(sender, sender_vc)
         # There is a dependency return 503
@@ -246,16 +232,15 @@ def adjust_mapping(key):
     # PUT request
     if request.method == "PUT":
         # Verify that request contains valid json and "value" as a key
-        # value = valid_json(request.data.decode())
         if not 'value' in request.json:
             return make_response(jsonify(error="PUT request does not specify a value"), 400)
-        
+
         value = request.json['value']
 
         # Update local VC if request contains a VC
         if sender_vc:
             local_vc = max_of(local_vc, sender_vc)
-       
+
         # Only broadcast delivered client requests
         if not sender:
             relay_kvs(request, key)
@@ -307,12 +292,10 @@ def adjust_mapping(key):
 def handle_views():
     # Add view(replica)
     if request.method == "PUT":
-        
         new_view = in_json("view", request.json)
         if not new_view:
             return make_response(jsonify(error="bad request"), 400)
         # already part of the view
-        print("help", new_view, type(new_view), views, type(views), get_local_causal_metadata()["vc"], flush=True)
         if new_view in views:
            return make_response(jsonify(result="already present", replica_data=dict(vc=get_local_causal_metadata()["vc"], store=_store)), 200)
 
@@ -376,7 +359,6 @@ def pulse():
 
     return crashed_replicas
 
-
 # This function should always be called with a mutex
 # To be called whenever the replica's views needs to be changed
 def update_views(new_views, removed=False):
@@ -429,11 +411,9 @@ def get_shard_id():
 def get_members(ID):
     global shards
     ID = int(ID)
-    shard_ids = list(shards.keys())
     if ID not in shards:
         return make_response({"error": "Shard ID does not exist"}, 404) 
     else:
-        print(f"SHARDS AT /SHARD-MEMBERS: {shards}", flush=True)
         return make_response({"shard-members": list(shards[ID])}, 200)
 
 # Look up the number of kv pairs stored in the specified shard
@@ -455,7 +435,6 @@ def get_key_count(ID):
     else:
         return make_response({"shard-key-count": len(_store)}, 200)
 
-
 # Assign the node <ID:PORT> to the shard <ID>
 # Given JSON body {"socket-address": <IP:PORT>}
 @views_route.route("/shard/add-member/<ID>", methods=["PUT"])
@@ -464,43 +443,40 @@ def add_member(ID):
     shard_ids = list(shards.keys())
 
     add_socket_address = in_json("socket-address", request.json)
-    
+
     if not add_socket_address:
         return make_response(dict(error="Missing <IP:PORT> header"),400)
-    
+
     if add_socket_address not in views:
         return make_response(dict(error=f"Node with port {add_socket_address} does not exist"),404)
 
     if add_socket_address not in views or ID not in shard_ids:
         return make_response(dict(error=f"Shard with ID {ID} does not exist"),404)
 
-    print("ADD new member: relaying to views", views, flush=True)
     for node in views:
         while True:
             # Forward to every replica in the system
             try:
                 metadata = request.json
                 metadata["shards"] = shards
-                jason_friendy_shards_dictionary = to_jason_friendly_shard_dict(shards)
+                jason_friendy_shards_dictionary = to_jason_friendy_shard_dict(shards)
                 metadata["shards"] = jason_friendy_shards_dictionary
                 response = requests.put(f"http://{node}/assign/{ID}", json=metadata)
                 break
             except (requests.Timeout, requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
-                # WIP - crash detection might not save this from looping indefinitely. TODO: verify this
                 pass
-    
+
     return make_response(dict(result="node added to shard"),200)
 
-
-
-# I am at my limit
-def to_jason_friendly_shard_dict(shards):
+# Converts from dict() of set()s to a dict() of list()s
+def to_jason_friendy_shard_dict(shards):
     jason_friendy_shard_dict = dict()
     for shard_m in shards:
         jason_friendy_shard_dict[shard_m] = list(shards[shard_m])
     return jason_friendy_shard_dict
 
-def to_jason_unfriendly_shard_dict(shards):
+# Converts from dict() of list()s to a dict() of set()s
+def to_jason_unfriendy_shard_dict(shards):
     jason_unfriendy_shard_dict = dict()
     for shard_m in shards:
         jason_unfriendy_shard_dict[int(shard_m)] = set(shards[shard_m])
@@ -516,14 +492,12 @@ def assign_to_shard(ID):
     global _substore
     ID = int(ID)
 
-    #print(f"SHARDS BEFORE ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
-
     # new node does not have shards initialized
     if not shards:
         # assign shard id and shards
         shard_id = ID
-        shards = to_jason_unfriendly_shard_dict(request.json["shards"])
-    print(f"SHARDS BEFORE ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
+        shards = to_jason_unfriendy_shard_dict(request.json["shards"])
+
     # update shards at ID to contain the address of the new node
     add_socket_address = in_json("socket-address", request.json)
     shards[ID].add(add_socket_address)
@@ -531,17 +505,17 @@ def assign_to_shard(ID):
 
     if ID == shard_id:
         local_vc[socket_address] = 0
+
     # check if this node is in front of the newly added node on the imaginary ring
     prev_pos = None
     if socket_address != add_socket_address:
-        
+
         for ring_pos in sorted(ring_positions.keys()):
             if ring_positions[ring_pos] == socket_address:
                 break
             prev_pos = ring_positions[ring_pos]
         if prev_pos == add_socket_address:
             # need to rehash our _substore
-            print("LOSING MARBLES", flush=True)
             temp_substore = dict()
             for key in _substore:
                 if consistent_hash_key(key) == socket_address:
@@ -555,9 +529,7 @@ def assign_to_shard(ID):
             local_vc[member] = 0
         replicate_shard_member(shards[ID])
 
-    print(f"SHARDS AFTER ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
     return make_response(dict(result="node added to shard"),200)
-
 
 def replicate_shard_member(shard_members):
     global views
@@ -597,13 +569,10 @@ def replicate_shard_member(shard_members):
             except (requests.ConnectionError, requests.RequestException, requests.exceptions.HTTPError):
                 break
 
-
-
 # Trigger a reshard into <INTEGER> shards, maintaining fault-tolerance
 # Given JSON body {"shard-count": <INTEGER>}
 @views_route.route("/shard/reshard", methods=["PUT"])
 def reshard():
-    print("received reshard req: ", request.json, flush=True)
     global shard_id
     global shards
     global ring_positions
@@ -622,7 +591,6 @@ def reshard():
     # two cases
     #(1)Reshard with changed N
     reshard, reshard_ring_positions = resharding.partition_by_hash(views, new_shard_count)
-    # print(f"NEWLY RESHARDED SHARDS: {reshard}", flush=True)
 
     # assign possible new id
     # did this replica's shard_id change?
@@ -634,33 +602,26 @@ def reshard():
         relay_reshard(relay_req)
 
     # update this node
-    update_node(shards[shard_id], reshard[new_shard_id])
-       
+    update_node(reshard[new_shard_id])
 
-    
     # assign vars
     shards = reshard
     ring_positions = reshard_ring_positions
     shard_count = new_shard_count
     shard_id = new_shard_id
     # Reshard complete
-    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}, _store {len(_store)} _substore {len(_substore)}", flush=True)
     return make_response(dict(result="resharded"), 200)
-
 
 def find_replica_id(shards, replica_to_find):
     for id in shards:
         if replica_to_find in shards[id]:
             return id
 
-
 # Relay/rebroadcast a request to all replicas on the /reshard endpoint
 def relay_reshard(relayed_request):
     for view in views:
-        print(f"RELAY RESHARD TO {view}", flush=True)
         if view != socket_address:
             buffer_send_reshard(relayed_request, view)
-
 
 def buffer_send_reshard(req : Flask.request_class, view : str):
     """Keep sending updated view information until received and processed (eventual consistency)"""
@@ -669,7 +630,6 @@ def buffer_send_reshard(req : Flask.request_class, view : str):
     metadata["relay"] = None
     while True:
         try:
-            print(f"BUFFER SEND RESHARD TO {view}", flush=True)
             response = requests.request(f"{req.method}", f"http://{view}/shard/reshard", json=metadata)
             break
         except requests.Timeout:
@@ -681,15 +641,11 @@ def buffer_send_reshard(req : Flask.request_class, view : str):
 def handle_get_substore():
     if request.method == "GET":
         return make_response(dict(substore=_substore),200)
-    # update _substore
 
-
-
-def update_node(old_members, new_members):
+def update_node(new_members):
     """Update node to match information in new partition"""
     global local_vc
     global _store
-    print(f"old members: {old_members}, new members: {new_members}", flush=True)
     # OLD_MEMBERS(becoming uneeded)
     # start _store anew
     _store = dict()
@@ -700,8 +656,6 @@ def update_node(old_members, new_members):
         # get member _substore
         member_res = requests.get(f"http://{member}/get-substore", json=dict())
         member_substore = member_res.json()['substore']
-
-        print(member_substore, type(member_substore))
         # update _store with recv _substore
         _store.update(member_substore)
 

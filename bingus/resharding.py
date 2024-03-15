@@ -3,7 +3,7 @@ import hashlib
 
 HASH_OUTPUT_SPACE = 128
 GLOBAL_MIN = 2
-views = { '10.10.0.6:8090', '10.10.0.4:8090', '10.10.0.7:8090', '10.10.0.2:8090', '10.10.0.3:8090', '10.10.0.5:8090'}
+
 def balance_shards(shards, MIN_NODES_PER_SHARD):
     """
     Returns:
@@ -76,7 +76,3 @@ def calculate_ring_positions(replicas):
         ring_pos[hash_as_decimal % HASH_OUTPUT_SPACE] = replica 
     
     return ring_pos
-
-if __name__=="__main__":
-    res, idk = partition_by_hash(views, 3)
-    print(res)
