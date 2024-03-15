@@ -262,7 +262,7 @@ def adjust_mapping(key):
             res = make_response({"result": "replaced", "causal-metadata": get_local_causal_metadata(sender, sender_vc_all)}, 200)
         # Update store
         _store[key] = value
-        # possibly update _substore
+        # possibly update _substore if key hashed to local replica
         if addr_to_send == socket_address:
             _substore[key] = value
         
@@ -506,23 +506,42 @@ def assign_to_shard(ID):
     global shards
     global shard_id
     global local_vc
+    global ring_positions   
+    global _substore
     ID = int(ID)
 
     print(f"SHARDS BEFORE ADDING THE NEW MEMBER: {shards}", flush=True)
 
+    # new node does not have shards initialized
     if not shards:
-        # NEW NODE
+        # assign shard id and shards
         shard_id = ID
         shards = to_jason_unfriendly_shard_dict(request.json["shards"])
     
+    # update shards at ID to contain the address of the new node
     add_socket_address = in_json("socket-address", request.json)
     shards[ID].add(add_socket_address)
+    ring_positions = resharding.calculate_ring_positions(views)
+    
+    # check if this node is in front of the newly added node on the imaginary ring
+    prev_pos = None
+    for ring_pos in sorted(ring_positions.keys()):
+        if ring_positions[ring_pos] == socket_address:
+            break
+        prev_pos = ring_positions[ring_pos]
+    if prev_pos == add_socket_address:
+        # need to rehash our _substore
+        temp_substore = dict()
+        for key in _substore:
+            if consistent_hash_key(key) == socket_address:
+                temp_substore[key] = _substore[key]
+        temp_substore = _substore
     
     if socket_address == add_socket_address:
         # This is the newly-added node, so replicate store & vc
         replicate_shard_member(shards[ID])
 
-    print(f"SHARDS AFTER ADDING NEW REPLICA {shards}: ", flush=True)
+    #print(f"SHARDS AFTER ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {_store}, _substore{_substore}, ring_positions {ring_positions}", flush=True)
     return make_response(dict(result="node added to shard"),200)
 
 
@@ -530,6 +549,7 @@ def replicate_shard_member(shard_members):
     global views
     global local_vc
     global _store
+    global _substore
     for member in shard_members:
         while True:
             # Add Replicas that respond
@@ -537,6 +557,7 @@ def replicate_shard_member(shard_members):
                 # Send PUT request
                 response = requests.put(f'http://{member}/view', json={'view': socket_address, 'relay': False})
                 metadata = response.json()
+                # TODO: leave it for now I guess skullmoji?
                 views.add(member)
 
                 # update local clock
@@ -553,6 +574,11 @@ def replicate_shard_member(shard_members):
                         if VectorClock(local_vc) <= VectorClock(received_vc):
                             local_vc = received_vc
                             _store = metadata['replica_data']['store']
+                            # update _substore to contain keys that hash to new node
+                            for key in _store:
+                                if consistent_hash_key(key) == socket_address:
+                                    _substore[key] = _store[key]
+
                 break
 
             # Ignore unresponsive replicas
@@ -587,13 +613,14 @@ def reshard():
     # print(f"NEWLY RESHARDED SHARDS: {reshard}", flush=True)
 
     # assign possible new id
+    # did this replica's shard_id change?
     new_shard_id = find_replica_id(reshard, socket_address)
-    # relay the reshard request to all views(replicas)
+    # relay the reshard request to all views(replicas) if sent from client
     if "relay" not in request.json:
         relay_req = request
         relay_req.json["relay"] = "bingus"
         relay_reshard(relay_req)
-    print(f"new_id {new_shard_id}, old_id {shard_id}", flush=True)
+
     # update this node
     update_node(shards[shard_id], reshard[new_shard_id])
        
@@ -603,9 +630,9 @@ def reshard():
     shards = reshard
     ring_positions = reshard_ring_positions
     shard_count = new_shard_count
-
+    shard_id = new_shard_id
     # Reshard complete
-    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}", flush=True)
+    print(f"AFTER RESHARD: shards{shards}, ring_pos{ring_positions}, id{shard_id}, shard_count{shard_count}, vc{local_vc}, _store {len(_store)} _substore {len(_substore)}", flush=True)
     return make_response(dict(result="resharded"), 200)
 
 
@@ -638,20 +665,35 @@ def buffer_send_reshard(req : Flask.request_class, view : str):
         except (requests.ConnectionError, requests.RequestException):
             continue
 
+@views_route.route("/get-substore", methods=["GET", "PUT"])
+def handle_get_substore():
+    if request.method == "GET":
+        return make_response(dict(substore=_substore),200)
+    # update _substore
+
+
+
 def update_node(old_members, new_members):
     """Update node to match information in new partition"""
     global local_vc
     global _store
     print(f"old members: {old_members}, new members: {new_members}", flush=True)
-    # NOTE: new_shard_id and old_shard_id may not be needed
-    # OLD_MEMBERS
-    # remove and store keys from old_members' _store that hash to this node
-    for member in old_members:
-        pass
-    # NEW_MEMBERS
-    # add the keys from previous step to new members' _store
-    # change vc_clock
+    # OLD_MEMBERS(becoming uneeded)
+    # start _store anew
+    _store = dict()
+    # add local _subtore
+    _store.update(_substore)
+    # populate rest of _store
+    for member in new_members:
+        # get member _substore
+        member_res = requests.get(f"http://{member}/get-substore", json=dict())
+        member_substore = member_res.json()['substore']
 
+        print(member_substore, type(member_substore))
+        # update _store with recv _substore
+        _store.update(member_substore)
+
+    # Reset vc_clock to 0
     local_vc = dict()
   
     for member in new_members:

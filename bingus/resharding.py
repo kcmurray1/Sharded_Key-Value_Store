@@ -59,6 +59,24 @@ def partition_by_hash(replicas, shard_count):
     initial_distribution = balance_shards(initial_distribution, math.floor(len(replicas)/shard_count))
     return (initial_distribution, ring_pos)
 
+def calculate_ring_positions(replicas):
+    """Calculate imaginary ring positions given an iterable of replica addresses
+    
+    returns dict containing ring positions follow {hash: replica} format
+    ex: {5: a, 14: b}
+    # new node added
+    {5: a, 7:c, 14:b}
+    """
+    ring_pos = dict()
+    for replica in replicas:
+        # Hash each replica by address
+        raw_hash = hashlib.md5(bytes(replica.encode('ascii')))
+        hash_as_decimal = int(raw_hash.hexdigest(),16)
+        # calculate position on imaginary ring
+        ring_pos[hash_as_decimal % HASH_OUTPUT_SPACE] = replica 
+    
+    return ring_pos
+
 if __name__=="__main__":
     res, idk = partition_by_hash(views, 3)
     print(res)
