@@ -205,7 +205,6 @@ def get_metadata(req):
 # --------------------------------------------------------------------------------------------------------------
 # Key Value Store endpoint
 # --------------------------------------------------------------------------------------------------------------
-
 @views_route.route("/kvs/<key>", methods=["GET", "PUT", "DELETE"])
 def adjust_mapping(key):
     global local_vc
@@ -238,6 +237,10 @@ def adjust_mapping(key):
         # There is a dependency return 503
         if dependency_result:
             return make_response({"error": "Causal dependencies not satisfied; try again later", "get-vc" : get_local_causal_metadata()["vc"]}, 503)
+    else:
+        addr_to_send = consistent_hash_key(key)
+        if addr_to_send != socket_address:
+            return forward(request, addr_to_send,key)
     # PUT request
     if request.method == "PUT":
         # Verify that request contains valid json and "value" as a key
@@ -250,9 +253,7 @@ def adjust_mapping(key):
         # Update local VC if request contains a VC
         if sender_vc:
             local_vc = max_of(local_vc, sender_vc)
-        # possibly update _substore if key hashed to local replica
-        if addr_to_send == socket_address:
-            _substore[key] = value
+       
         # Only broadcast delivered client requests
         if not sender:
             relay_kvs(request, key)
@@ -264,7 +265,9 @@ def adjust_mapping(key):
             res = make_response({"result": "replaced", "causal-metadata": get_local_causal_metadata(sender, sender_vc_all)}, 200)
         # Update store
         _store[key] = value
-        
+        # possibly update _substore if key hashed to local replica
+        if addr_to_send == socket_address:
+            _substore[key] = value
         
         return res
     
@@ -408,7 +411,6 @@ def periodic_pulse_sender():
 # --------------------------------------------------------------------------------------------------------------
 # Shard endpoints
 # --------------------------------------------------------------------------------------------------------------
-
 # Retrieve the list of all shard ids
 @views_route.route("/shard/ids", methods=["GET"])
 def get_shard_ids():
