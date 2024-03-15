@@ -13,12 +13,12 @@ We chose this design because it seemed the most intuitive and it was covered in 
 # Resharding Mechanism
 
 Upon receiving a reshard request a node will relay the request to to all nodes in the system. Independently each shard will recalculate:
-Shards, Shard_id
-Regardless of the number of shards, N, changes during a reshard, our system will attempt to balance the stores by floor(# of nodes/partitions). Every node then contains an updated shard distribution. Nodes use this new shard distribution to determine how to proceed.
-Store
-We added another attribute to each node called _substore which contains keys that ONLY hash to the node. To reduce rehashing we update the _substore along with the regular _store during any PUT and DELETE to the /kvs endpoint. Thus, when we reshard, every node will refer to their new shard distribution to retrieve _substores from new members as well as share their _substore.
-Local vector clocks
-Again, using the newly distributed shards, each node will change their vector clock to contain their new members.
+## Shards, Shard_id
+- Regardless of the number of shards, N, changes during a reshard, our system will attempt to balance the stores by floor(# of nodes/partitions). Every node then contains an updated shard distribution. Nodes use this new shard distribution to determine how to proceed.
+## Store
+- We added another attribute to each node called _substore which contains keys that ONLY hash to the node. To reduce rehashing we update the _substore along with the regular _store during any PUT and DELETE to the /kvs endpoint. Thus, when we reshard, every node will refer to their new shard distribution to retrieve _substores from new members as well as share their _substore.
+## Local vector clocks
+- Again, using the newly distributed shards, each node will change their vector clock to contain their new members.
 Because during a reshard, there will be no requests on the key-value store to deliver, we have made the assumption that all nodes’ causal metadata will be up to date with each other and that we effectively start with a clean slate. Based on this assumption, we decided to reset the vector clocks at each node to 0 after each reshard.
 Before resharding a node may have a local vc of:
 `{'10.10.0.4:8090': 14, '10.10.0.6:8090': 3, '10.10.0.7:8090': 5}`
@@ -40,7 +40,7 @@ A potential issue with this implementation is the possibility of a pulse message
 
 ## Causal Dependency Mechanism(slightly updated in assignment 4)
 
-# New changes from assignment 4
+## New changes from assignment 4
 Some modifications to causal metadata - we now only store values at the positions of the members of the same shard.
 So now client metadata takes the form:
 
@@ -55,7 +55,7 @@ Client[‘1’] = `{'10.10.0.2:8090': 54, '10.10.0.3:8090': 2}`
 
 We then proceed with the following protocol
 
-# End of new changes from assignment 4
+## End of new changes from assignment 4
 
 
 In our system, our implementation of vector clocks consists of a dictionary where replica addresses are the keys with integer values corresponding to tracked events which in this case are msg deliveries.
