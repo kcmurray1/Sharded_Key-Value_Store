@@ -435,6 +435,8 @@ class TestHW4(unittest.TestCase):
 
         print('>>> Check that shard key counts have the right total')
         shard_key_counts = dict()
+        all_instances.append(grace)
+        print(shard_members)
         for shard_id, members in shard_members.items():
 
             with self.subTest(msg='for shard {}'.format(shard_id)):

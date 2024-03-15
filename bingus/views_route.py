@@ -250,7 +250,9 @@ def adjust_mapping(key):
         # Update local VC if request contains a VC
         if sender_vc:
             local_vc = max_of(local_vc, sender_vc)
-
+        # possibly update _substore if key hashed to local replica
+        if addr_to_send == socket_address:
+            _substore[key] = value
         # Only broadcast delivered client requests
         if not sender:
             relay_kvs(request, key)
@@ -262,9 +264,7 @@ def adjust_mapping(key):
             res = make_response({"result": "replaced", "causal-metadata": get_local_causal_metadata(sender, sender_vc_all)}, 200)
         # Update store
         _store[key] = value
-        # possibly update _substore if key hashed to local replica
-        if addr_to_send == socket_address:
-            _substore[key] = value
+        
         
         return res
     
@@ -307,6 +307,7 @@ def handle_views():
         if not new_view:
             return make_response(jsonify(error="bad request"), 400)
         # already part of the view
+        print("help", new_view, type(new_view), views, type(views), get_local_causal_metadata()["vc"], flush=True)
         if new_view in views:
            return make_response(jsonify(result="already present", replica_data=dict(vc=get_local_causal_metadata()["vc"], store=_store)), 200)
 
@@ -469,6 +470,7 @@ def add_member(ID):
     if add_socket_address not in views or ID not in shard_ids:
         return make_response(dict(error=f"Shard with ID {ID} does not exist"),404)
 
+    print("ADD new member: relaying to views", views, flush=True)
     for node in views:
         while True:
             # Forward to every replica in the system
@@ -510,7 +512,7 @@ def assign_to_shard(ID):
     global _substore
     ID = int(ID)
 
-    print(f"SHARDS BEFORE ADDING THE NEW MEMBER: {shards}", flush=True)
+    print(f"SHARDS BEFORE ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
 
     # new node does not have shards initialized
     if not shards:
@@ -522,26 +524,34 @@ def assign_to_shard(ID):
     add_socket_address = in_json("socket-address", request.json)
     shards[ID].add(add_socket_address)
     ring_positions = resharding.calculate_ring_positions(views)
-    
+
+    if ID == shard_id:
+        local_vc[socket_address] = 0
     # check if this node is in front of the newly added node on the imaginary ring
     prev_pos = None
-    for ring_pos in sorted(ring_positions.keys()):
-        if ring_positions[ring_pos] == socket_address:
-            break
-        prev_pos = ring_positions[ring_pos]
-    if prev_pos == add_socket_address:
-        # need to rehash our _substore
-        temp_substore = dict()
-        for key in _substore:
-            if consistent_hash_key(key) == socket_address:
-                temp_substore[key] = _substore[key]
-        temp_substore = _substore
+    if socket_address != add_socket_address:
+        
+        for ring_pos in sorted(ring_positions.keys()):
+            if ring_positions[ring_pos] == socket_address:
+                break
+            prev_pos = ring_positions[ring_pos]
+        if prev_pos == add_socket_address:
+            # need to rehash our _substore
+            print("LOSING MARBLES", flush=True)
+            temp_substore = dict()
+            for key in _substore:
+                if consistent_hash_key(key) == socket_address:
+                    temp_substore[key] = _substore[key]
+            _substore = temp_substore
     
     if socket_address == add_socket_address:
         # This is the newly-added node, so replicate store & vc
+        local_vc = dict()
+        for member in shards[ID]:
+            local_vc[member] = 0
         replicate_shard_member(shards[ID])
 
-    #print(f"SHARDS AFTER ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {_store}, _substore{_substore}, ring_positions {ring_positions}", flush=True)
+    print(f"SHARDS AFTER ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
     return make_response(dict(result="node added to shard"),200)
 
 
@@ -558,7 +568,7 @@ def replicate_shard_member(shard_members):
                 response = requests.put(f'http://{member}/view', json={'view': socket_address, 'relay': False})
                 metadata = response.json()
                 # TODO: leave it for now I guess skullmoji?
-                views.add(member)
+                # views.add(member)
 
                 # update local clock
                 if 'replica_data' in metadata:                   
@@ -570,14 +580,14 @@ def replicate_shard_member(shard_members):
                     received_vc.update(local_vc)
 
                     # compare clocks(should equal length and share keys)
-                    with update_views_lock:
-                        if VectorClock(local_vc) <= VectorClock(received_vc):
-                            local_vc = received_vc
-                            _store = metadata['replica_data']['store']
-                            # update _substore to contain keys that hash to new node
-                            for key in _store:
-                                if consistent_hash_key(key) == socket_address:
-                                    _substore[key] = _store[key]
+                    if VectorClock(local_vc) <= VectorClock(received_vc):
+                        local_vc = received_vc
+                        
+                        _store = metadata['replica_data']['store']
+                        # update _substore to contain keys that hash to new node
+                        for key in _store:
+                            if consistent_hash_key(key) == socket_address:
+                                _substore[key] = _store[key]
 
                 break
 
