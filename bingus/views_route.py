@@ -225,6 +225,8 @@ def adjust_mapping(key):
     # Perform logic if causal-metadata is present(not None)
     if request.json["causal-metadata"]:
         sender, sender_vc, sender_vc_all = get_metadata(request)
+
+        print(f"KVS REQ: sender_vc: {sender_vc} sender_vc_all {sender_vc_all}", flush=True)
          # hash value to determine whether to forward or proceed locally
         addr_to_send = consistent_hash_key(key)
         # request is from client and key is hashed to different replica
@@ -514,14 +516,14 @@ def assign_to_shard(ID):
     global _substore
     ID = int(ID)
 
-    print(f"SHARDS BEFORE ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
+    #print(f"SHARDS BEFORE ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
 
     # new node does not have shards initialized
     if not shards:
         # assign shard id and shards
         shard_id = ID
         shards = to_jason_unfriendly_shard_dict(request.json["shards"])
-    
+    print(f"SHARDS BEFORE ADDING NEW REPLICA {shards}, vc_clock {local_vc} _store {len(_store)}, _substore{len(_substore)}, ring_positions {ring_positions}", flush=True)
     # update shards at ID to contain the address of the new node
     add_socket_address = in_json("socket-address", request.json)
     shards[ID].add(add_socket_address)
@@ -562,18 +564,15 @@ def replicate_shard_member(shard_members):
     global local_vc
     global _store
     global _substore
-    for member in shard_members:
+    # send to all nodes in view
+    for view in views:
         while True:
-            # Add Replicas that respond
             try:
-                # Send PUT request
-                response = requests.put(f'http://{member}/view', json={'view': socket_address, 'relay': False})
+                response = requests.put(f'http://{view}/view', json={'view': socket_address, 'relay': False})
                 metadata = response.json()
-                # TODO: leave it for now I guess skullmoji?
-                # views.add(member)
 
-                # update local clock
-                if 'replica_data' in metadata:                   
+                # update local clock based on members of new replica
+                if 'replica_data' in metadata and view in shards[shard_id]:                   
                     # compare with padding
                     received_vc = metadata['replica_data']['vc']
                     # pad local clock {a: 0, b:0}
@@ -584,12 +583,13 @@ def replicate_shard_member(shard_members):
                     # compare clocks(should equal length and share keys)
                     if VectorClock(local_vc) <= VectorClock(received_vc):
                         local_vc = received_vc
-                        
+                        # New node's store should match store from members         
                         _store = metadata['replica_data']['store']
-                        # update _substore to contain keys that hash to new node
-                        for key in _store:
-                            if consistent_hash_key(key) == socket_address:
-                                _substore[key] = _store[key]
+                other_replica_store = metadata['replica_data']['store']
+                # update _substore to contain keys that hash to new node
+                for key in other_replica_store:
+                    if consistent_hash_key(key) == socket_address:
+                        _substore[key] = other_replica_store[key]
 
                 break
 
