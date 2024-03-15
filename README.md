@@ -1,8 +1,34 @@
 # CSE138 Assignment #4
 
-# How Our System Shards Keys Across Nodes
+# Key-to-shard mapping Mechanism
 
-WIP
+We implemented consistent hashing using MD5,with a 128 output space, to hash the positions of the nodes on the imaginary ring and to assign keys to nodes that hash close to it. All nodes in our system have a dictionary that follows the format: 
+
+Ring_positions = `{node_hash_1: node_addr1, node_hash2: node_addr2…}`
+
+So, upon hashing a key, we “walk” along the imaginary ring by updating its position(incrementing its value by 1) until we reach a key in ring_positions. The node that performs this then compares the address associated with the hash and its own address to determine whether it needs to forward the request or process it locally.
+
+We chose this design because it seemed the most intuitive and it was covered in class.
+
+# Resharding Mechanism
+
+Upon receiving a reshard request a node will relay the request to to all nodes in the system. Independently each shard will recalculate:
+Shards, Shard_id
+Regardless of the number of shards, N, changes during a reshard, our system will attempt to balance the stores by floor(# of nodes/partitions). Every node then contains an updated shard distribution. Nodes use this new shard distribution to determine how to proceed.
+Store
+We added another attribute to each node called _substore which contains keys that ONLY hash to the node. To reduce rehashing we update the _substore along with the regular _store during any PUT and DELETE to the /kvs endpoint. Thus, when we reshard, every node will refer to their new shard distribution to retrieve _substores from new members as well as share their _substore.
+Local vector clocks
+Again, using the newly distributed shards, each node will change their vector clock to contain their new members.
+Because during a reshard, there will be no requests on the key-value store to deliver, we have made the assumption that all nodes’ causal metadata will be up to date with each other and that we effectively start with a clean slate. Based on this assumption, we decided to reset the vector clocks at each node to 0 after each reshard.
+Before resharding a node may have a local vc of:
+`{'10.10.0.4:8090': 14, '10.10.0.6:8090': 3, '10.10.0.7:8090': 5}`
+After resharding they will now have:
+`{'10.10.0.4:8090': 0, '10.10.0.6:8090': 0, '10.10.0.7:8090': 0}`
+
+Additionally, when a client sends any request afterward, we update their metadata such that it agrees with the new arrangement of our system.
+
+The rationale behind this design was to reduce the need for rehashing to maintain the node’s ability to independently calculate the shards in the system.
+
 
 # Failure Detection Mechanism
 
@@ -12,7 +38,25 @@ This ensures that all views in each live replica will eventually be consistent w
 
 A potential issue with this implementation is the possibility of a pulse message request to a replica that is currently up (and not crashed/down) getting lost (or the response to the pulse request) - leading to a false positive and the replica is removed from the view of the pulse-sending replica incorrectly.
 
-## Causal Dependency Mechanism
+## Causal Dependency Mechanism(slightly updated in assignment 4)
+
+# New changes from assignment 4
+Some modifications to causal metadata - we now only store values at the positions of the members of the same shard.
+So now client metadata takes the form:
+
+Client = `{'0': {'10.10.0.4:8090': 14, '10.10.0.6:8090': 3, '10.10.0.7:8090': 5}, '`
+`1': {'10.10.0.2:8090': 54, '10.10.0.3:8090': 2}, '`
+`'2': {'10.10.0.5:8090': 3, '10.10.0.8:8090': 16}}`
+
+Our nodes, perform vector clock comparison the same by indexing the id its shard
+
+For example, if a node in partition 1 is processing the client’s request. We check for dependencies by comparing 
+Client[‘1’] = `{'10.10.0.2:8090': 54, '10.10.0.3:8090': 2}`
+
+We then proceed with the following protocol
+
+# End of new changes from assignment 4
+
 
 In our system, our implementation of vector clocks consists of a dictionary where replica addresses are the keys with integer values corresponding to tracked events which in this case are msg deliveries.
 Example: `{'10.10.0.4:8090': 0, '10.10.0.3:8090': 0, '10.10.0.2:8090': 1}`
@@ -52,14 +96,14 @@ Replicas will perform a broadcast/relay upon receiving a client PUT or DELETE re
   - Otherwise, there is no causal dependency and the request can be delivered
 
 ## Possible Points of Failure Our System May be Sensitive to:
-*WIP - update this section later for any new system weakpoints*
 - Multiple clients sending requests to the system at the same time may lead to inconsistent key-value stores amongst the replicas (causal consistency could potentially be violated).
 - We did not test any multi-client executions.
 - Our system assumes that broadcasts/relay functions will always perform a complete broadcast to all other nodes, and do not crash in the middle of executing.
 - If a replica crashes before relaying/broadcasting a PUT or DELETE kvs request to all replicas, there is an opportunity for the remaining active replicas to have different stores. This could violate read your write consistency, as some stores may not be up to date.
+- Our system does not have a functional mechanism to rebalance the shards if their key-counts are not evenly-distributed. As a result, certain “hot-spot” nodes may become overburdened with larger stores while other nodes’ stores are less-used. We attempted to overcome this by having our sharding mechanism try to divide up the shards into partitions each with an equal number of nodes.
+
 
 ## Acknowledgments:
-*WIP - update this section if we consult anyone*
 We did not consult anyone when developing our system.
 
 ## Citations:
@@ -70,10 +114,14 @@ This post on Stack Overflow helped us solve a major bug in our system where mult
 - [https://stackoverflow.com/questions/36314137/how-to-start-a-thread-in-python-after-waiting-for-a-specific-delay](https://stackoverflow.com/questions/36314137/how-to-start-a-thread-in-python-after-waiting-for-a-specific-delay)
 We used information from this post to compose an asynchronous pulse/heartbeat component for our system. In addition, to developing a notification protocol upon the creation of new replicas.
 
+- [https://stackoverflow.com/questions/22281059/set-object-is-not-json-serializable](https://stackoverflow.com/questions/22281059/set-object-is-not-json-serializable)
+We were having trouble sending shard data since we formatted it as a dictionary where keys were strings and values were sets. This post helped us understand we needed to convert the sets into a different datatype. We chose to “encode” sets as lists and then “decode” from lists to sets. We perform this in our custom methods to_jason_friendy_shard_dict(shard) and to_jason_unfriendy_shard_dict(shard) in our views_route.py file.
+
+
 ## Team Contributions:
-*WIP - update this section*
 Our team collectively designed and tested the replica system, and we worked together in pair-programming sessions on all aspects of the project.
 
-- **Will**: Primarily focused on the causal consistency for the kvs endpoint, implemented the VectorClock datatype, and worked on parts of the heartbeat/pulse endpoint system for failure detection.
+- **Will**: Worked on shard endpoints, and also worked on add-member and resharding mechanisms.
 
-- **Kristian**: Worked on the View endpoint of the system and startup protocol upon the creation of a new Replica. As well as implementing and testing our pulse mechanism to ensure eventual consistency.
+
+- **Kristian**: Worked on consistent hashing and partitioning by hash mechanisms, and updated use of vector clocks as part of causal metadata to handle new sharding scheme.
