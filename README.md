@@ -119,7 +119,7 @@ We were having trouble sending shard data since we formatted it as a dictionary 
 
 
 ## Team Contributions:
-Our team collectively designed and tested the replica system, and we worked together in pair-programming sessions on all aspects of the project.
+Our team collectively designed and tested the SYSTEM, and we worked together in pair-programming sessions on all aspects of the project.
 
 - **Will**: Worked on shard endpoints, and also worked on add-member and resharding mechanisms.
 
