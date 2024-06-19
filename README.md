@@ -1,4 +1,3 @@
-# CSE138 Assignment #4
 
 # Key-to-shard mapping Mechanism
 
@@ -38,9 +37,9 @@ This ensures that all views in each live replica will eventually be consistent w
 
 A potential issue with this implementation is the possibility of a pulse message request to a replica that is currently up (and not crashed/down) getting lost (or the response to the pulse request) - leading to a false positive and the replica is removed from the view of the pulse-sending replica incorrectly.
 
-## Causal Dependency Mechanism(slightly updated in assignment 4)
+## Causal Dependency Mechanism
 
-## New changes from assignment 4
+## New changes
 Some modifications to causal metadata - we now only store values at the positions of the members of the same shard.
 So now client metadata takes the form:
 
@@ -55,7 +54,7 @@ Client[‘1’] = `{'10.10.0.2:8090': 54, '10.10.0.3:8090': 2}`
 
 We then proceed with the following protocol
 
-## End of new changes from assignment 4
+## End of new changes
 
 
 In our system, our implementation of vector clocks consists of a dictionary where replica addresses are the keys with integer values corresponding to tracked events which in this case are msg deliveries.
